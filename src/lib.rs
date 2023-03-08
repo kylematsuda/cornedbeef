@@ -1,5 +1,6 @@
 use core::hash::{BuildHasher, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::LinkedList;
 
 // Use std's default hasher.
 pub type DefaultHashBuilder = core::hash::BuildHasherDefault<DefaultHasher>;
@@ -15,7 +16,7 @@ pub struct CbHashMap<K, V, S: BuildHasher = DefaultHashBuilder> {
     hasher: S,
     n_buckets: usize,
     n_items: usize,
-    storage: Box<[Vec<(K, V)>]>,
+    storage: Box<[LinkedList<(K, V)>]>,
 }
 
 impl<K, V> CbHashMap<K, V> {
@@ -24,15 +25,13 @@ impl<K, V> CbHashMap<K, V> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let capacity = if capacity == 0 {
-            capacity
-        } else if capacity < 16 {
-            16
-        } else {
-            1 << (capacity.ilog2() + 1)
+        let capacity = match capacity {
+            0 => 0,
+            x if x < 16 => 16,
+            x => 1 << (x.ilog2() + 1),
         };
         let storage = (0..capacity)
-            .map(|_| Vec::new())
+            .map(|_| LinkedList::new())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self {
@@ -72,6 +71,31 @@ where
         }
     }
 
+    pub fn remove(&mut self, k: &K) -> Option<V> {
+        let index = self.key_to_index(k);
+
+        // Find the index of `k`
+        let split_index = self.storage[index]
+            .iter()
+            .enumerate()
+            .find(|(_, (kk, _))| kk == k)
+            .map(|(j, _)| j);
+
+        if let Some(j) = split_index {
+            // Take the item we want to remove
+            let mut tail = self.storage[index].split_off(j);
+            let item = tail.pop_front();
+            self.n_items -= 1;
+
+            // Connect the remaining elements to the original list
+            self.storage[index].append(&mut tail);
+
+            item.map(|(_, v)| v)
+        } else {
+            None
+        }
+    }
+
     pub fn get(&self, k: &K) -> Option<&V> {
         let index = self.key_to_index(k);
         self.get_inner(k, index)
@@ -101,7 +125,7 @@ where
     }
 
     fn insert_at(&mut self, index: usize, k: K, v: V) {
-        self.storage[index].push((k, v));
+        self.storage[index].push_front((k, v));
         self.n_items += 1;
     }
 
@@ -121,7 +145,7 @@ where
             self.n_buckets * 2
         };
         let new_storage = (0..capacity)
-            .map(|_| Vec::new())
+            .map(|_| LinkedList::new())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
@@ -130,7 +154,7 @@ where
         for chain in Vec::from(old_storage).into_iter() {
             for (k, v) in chain.into_iter() {
                 let index = self.key_to_index(&k);
-                self.storage[index].push((k, v));
+                self.storage[index].push_front((k, v));
             }
         }
     }
@@ -153,5 +177,22 @@ mod tests {
         for i in 0..1000 {
             assert!(map.get(&i).is_some());
         }
+    }
+
+    #[test]
+    fn remove() {
+        let mut map = CbHashMap::new();
+
+        for i in 0..1000 {
+            map.insert(i, i);
+        }
+
+        assert_eq!(map.len(), 1000);
+
+        for i in 0..1000 {
+            assert_eq!(map.remove(&i), Some(i));
+        }
+
+        assert_eq!(map.len(), 0);
     }
 }
