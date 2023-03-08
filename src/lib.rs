@@ -1,6 +1,5 @@
 use core::hash::{BuildHasher, Hasher};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::LinkedList;
 
 // Use std's default hasher.
 pub type DefaultHashBuilder = core::hash::BuildHasherDefault<DefaultHasher>;
@@ -11,12 +10,66 @@ fn make_hash<S: BuildHasher, K: core::hash::Hash>(build_hasher: &S, key: &K) -> 
     hasher.finish()
 }
 
-/// Naive first Map using separate chaining for now.
+/// Represent a slot in the array.
+/// Open addressing implies we need a tombstone (I think).
+pub enum Bucket<T> {
+    Empty,
+    Tombstone,
+    Value(T),
+}
+
+impl<T> Bucket<T> {
+    /// Insert a new value into the bucket, returning the old value if present.
+    pub fn insert(&mut self, val: T) -> Option<T> {
+        match self {
+            Self::Empty | Self::Tombstone => {
+                *self = Self::Value(val);
+                None
+            }
+            Self::Value(old) => Some(std::mem::replace(old, val)),
+        }
+    }
+
+    /// Remove the value from the bucket, returning the old value if it exists.
+    pub fn remove(&mut self) -> Option<T> {
+        match self {
+            Self::Empty | Self::Tombstone => None,
+            Self::Value(_) => {
+                if let Self::Value(old) = std::mem::replace(self, Self::Tombstone) {
+                    Some(old)
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+    }
+
+    pub fn as_inner(&self) -> Option<&T> {
+        if let Self::Value(t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_inner_mut(&mut self) -> Option<&mut T> {
+        if let Self::Value(t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+}
+
+/// Open addressing, quadratic probing
 pub struct CbHashMap<K, V, S: BuildHasher = DefaultHashBuilder> {
     hasher: S,
     n_buckets: usize,
+    // This will increment when adding an item,
+    // but DOES NOT DECREMENT when removing (since we'll still have a tombstone).
+    n_occupied: usize,
     n_items: usize,
-    storage: Box<[LinkedList<(K, V)>]>,
+    storage: Box<[Bucket<(K, V)>]>,
 }
 
 impl<K, V> CbHashMap<K, V> {
@@ -31,13 +84,14 @@ impl<K, V> CbHashMap<K, V> {
             x => 1 << (x.ilog2() + 1),
         };
         let storage = (0..capacity)
-            .map(|_| LinkedList::new())
+            .map(|_| Bucket::Empty)
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self {
             hasher: DefaultHashBuilder::default(),
             n_buckets: capacity,
             n_items: 0,
+            n_occupied: 0,
             storage,
         }
     }
@@ -57,76 +111,94 @@ where
         if self.needs_grow() {
             self.grow_table();
         }
-        let index = self.key_to_index(&k);
-        match self.get_mut_inner(&k, index) {
-            Some(vv) => {
-                let mut v = v;
-                std::mem::swap(&mut v, vv);
-                Some(v)
+        self.insert_unchecked(k, v)
+    }
+
+    /// Don't grow the table
+    fn insert_unchecked(&mut self, k: K, v: V) -> Option<V> {
+        let mut current = self.key_to_index(&k);
+        let mut step = 1;
+        loop {
+            match &mut self.storage[current] {
+                Bucket::Value(_) => {}
+                x => {
+                    self.n_items += 1;
+                    self.n_occupied += 1;
+                    return x.insert((k, v)).map(|(_, v)| v);
+                }
             }
-            None => {
-                self.insert_at(index, k, v);
-                None
-            }
+            current = usize::rem_euclid(current + step, self.n_buckets);
+            step += 1;
         }
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
-        let index = self.key_to_index(k);
-
-        // Find the index of `k`
-        let split_index = self.storage[index]
-            .iter()
-            .enumerate()
-            .find(|(_, (kk, _))| kk == k)
-            .map(|(j, _)| j);
-
-        if let Some(j) = split_index {
-            // Take the item we want to remove
-            let mut tail = self.storage[index].split_off(j);
-            let item = tail.pop_front();
-            self.n_items -= 1;
-
-            // Connect the remaining elements to the original list
-            self.storage[index].append(&mut tail);
-
-            item.map(|(_, v)| v)
-        } else {
-            None
+        let mut current = self.key_to_index(&k);
+        let mut step = 1;
+        loop {
+            match &mut self.storage[current] {
+                Bucket::Tombstone => {}
+                Bucket::Empty => return None,
+                b @ Bucket::Value(_) => {
+                    let kk = b.as_inner().map(|(kk, _)| kk).unwrap();
+                    if kk == k {
+                        self.n_items -= 1;
+                        return b.remove().map(|(_, v)| v);
+                    }
+                }
+            }
+            current = usize::rem_euclid(current + step, self.n_buckets);
+            step += 1;
         }
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        let index = self.key_to_index(k);
-        self.get_inner(k, index)
-    }
-
-    fn get_inner(&self, k: &K, index: usize) -> Option<&V> {
-        self.storage[index]
-            .iter()
-            .find(|(kk, _)| k == kk)
-            .map(|(_, v)| v)
+        let mut current = self.key_to_index(&k);
+        let mut step = 1;
+        loop {
+            match &self.storage[current] {
+                Bucket::Tombstone => {}
+                Bucket::Empty => return None,
+                Bucket::Value((kk, vv)) => {
+                    if kk == k {
+                        return Some(vv);
+                    }
+                }
+            }
+            current = usize::rem_euclid(current + step, self.n_buckets);
+            step += 1;
+        }
     }
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
-        let index = self.key_to_index(k);
-        self.get_mut_inner(k, index)
-    }
+        let mut current = self.key_to_index(&k);
+        let mut step = 1;
 
-    fn get_mut_inner(&mut self, k: &K, index: usize) -> Option<&mut V> {
-        self.storage[index]
-            .iter_mut()
-            .find(|(kk, _)| k == kk)
-            .map(|(_, v)| v)
+        // Ugh, it's annoying that it won't let me just return from the loop.
+        let index = loop {
+            match self.storage.get(current).unwrap() {
+                Bucket::Tombstone => {}
+                Bucket::Empty => break None,
+                Bucket::Value((kk, _)) => {
+                    if kk == k {
+                        break Some(current);
+                    }
+                }
+            }
+            current = usize::rem_euclid(current + step, self.n_buckets);
+            step += 1;
+        };
+
+        let index = if let Some(i) = index {
+            i
+        } else {
+            return None;
+        };
+        self.storage[index].as_inner_mut().map(|(_, v)| v)
     }
 
     pub fn len(&self) -> usize {
         self.n_items
-    }
-
-    fn insert_at(&mut self, index: usize, k: K, v: V) {
-        self.storage[index].push_front((k, v));
-        self.n_items += 1;
     }
 
     fn key_to_index(&self, k: &K) -> usize {
@@ -145,16 +217,17 @@ where
             self.n_buckets * 2
         };
         let new_storage = (0..capacity)
-            .map(|_| LinkedList::new())
+            .map(|_| Bucket::Empty)
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
         self.n_buckets = capacity;
 
-        for chain in Vec::from(old_storage).into_iter() {
-            for (k, v) in chain.into_iter() {
-                let index = self.key_to_index(&k);
-                self.storage[index].push_front((k, v));
+        self.n_items = 0;
+        self.n_occupied = 0;
+        for bucket in Vec::from(old_storage).into_iter() {
+            if let Bucket::Value((k, v)) = bucket {
+                self.insert_unchecked(k, v);
             }
         }
     }
@@ -175,7 +248,7 @@ mod tests {
         assert_eq!(map.len(), 1000);
 
         for i in 0..1000 {
-            assert!(map.get(&i).is_some());
+            assert_eq!(map.get(&i), Some(&i));
         }
     }
 
@@ -194,5 +267,22 @@ mod tests {
         }
 
         assert_eq!(map.len(), 0);
+    }
+
+    #[test]
+    fn miss() {
+        let mut map = CbHashMap::new();
+
+        for i in 0..1000 {
+            map.insert(i, i);
+        }
+
+        assert_eq!(map.len(), 1000);
+
+        for i in 1000..2000 {
+            assert!(map.get(&i).is_none());
+        }
+
+        assert_eq!(map.len(), 1000);
     }
 }
