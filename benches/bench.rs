@@ -117,6 +117,49 @@ pub fn insert_grow_random(c: &mut Criterion) {
     group.finish();
 }
 
+macro_rules! bench_reserved {
+    ($map:ident, $it:expr, $size:expr, $len:expr) => {
+        |b| {
+            let mut map = $map::with_capacity($size);
+            b.iter(|| {
+                for i in $it {
+                    black_box(map.insert(i, [i; $len]));
+                }
+            })
+        }
+    };
+}
+
+pub fn insert_reserved_random(c: &mut Criterion) {
+    let mut group = c.benchmark_group("insert_reserved_random");
+    let seq = RandomKeys::new();
+
+    {
+        const LEN: usize = 4;
+        group.bench_function(
+            BenchmarkId::new("std", LEN),
+            bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
+        );
+        group.bench_function(
+            BenchmarkId::new("cb", LEN),
+            bench_reserved!(CbHashMap, seq.take(SIZE), SIZE, LEN),
+        );
+    }
+
+    {
+        const LEN: usize = 100;
+        group.bench_function(
+            BenchmarkId::new("std", LEN),
+            bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
+        );
+        group.bench_function(
+            BenchmarkId::new("cb", LEN),
+            bench_reserved!(CbHashMap, seq.take(SIZE), SIZE, LEN),
+        );
+    }
+    group.finish();
+}
+
 macro_rules! bench_lookup {
     ($map:ident, $size:expr, $len:expr) => {
         |b| {
@@ -314,6 +357,7 @@ criterion_group!(
     new,
     insert_grow_seq,
     insert_grow_random,
+    insert_reserved_random,
     lookup,
     lookup_miss,
     remove,

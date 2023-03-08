@@ -10,54 +10,57 @@ fn make_hash<S: BuildHasher, K: core::hash::Hash>(build_hasher: &S, key: &K) -> 
     hasher.finish()
 }
 
-/// Represent a slot in the array.
-/// Open addressing implies we need a tombstone (I think).
-pub enum Bucket<T> {
-    Empty,
-    Tombstone,
-    Value(T),
-}
+const EMPTY: u8 = 0x80;
+const TOMBSTONE: u8 = 0xFE;
+const MASK: u8 = 0x7F;
 
-impl<T> Bucket<T> {
-    /// Insert a new value into the bucket, returning the old value if present.
-    pub fn insert(&mut self, val: T) -> Option<T> {
-        match self {
-            Self::Empty | Self::Tombstone => {
-                *self = Self::Value(val);
-                None
-            }
-            Self::Value(old) => Some(std::mem::replace(old, val)),
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Metadata(u8);
+
+impl Metadata {
+    #[inline]
+    pub fn from_hash(hash: u64) -> Self {
+        Self((hash & (MASK as u64)) as u8)
     }
 
-    /// Remove the value from the bucket, returning the old value if it exists.
-    pub fn remove(&mut self) -> Option<T> {
-        match self {
-            Self::Empty | Self::Tombstone => None,
-            Self::Value(_) => {
-                if let Self::Value(old) = std::mem::replace(self, Self::Tombstone) {
-                    Some(old)
-                } else {
-                    unreachable!()
-                }
-            }
-        }
+    #[inline]
+    pub fn from_h2(h2: u8) -> Self {
+        Self(h2 & 0x7F)
     }
 
-    pub fn as_inner(&self) -> Option<&T> {
-        if let Self::Value(t) = self {
-            Some(t)
-        } else {
-            None
-        }
+    #[inline]
+    pub fn empty() -> Self {
+        Self(EMPTY)
     }
 
-    pub fn as_inner_mut(&mut self) -> Option<&mut T> {
-        if let Self::Value(t) = self {
-            Some(t)
-        } else {
-            None
-        }
+    #[inline]
+    pub fn tombstone() -> Self {
+        Self(TOMBSTONE)
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0 == EMPTY
+    }
+
+    #[inline]
+    pub fn is_tombstone(&self) -> bool {
+        self.0 == TOMBSTONE
+    }
+
+    #[inline]
+    pub fn is_value(&self) -> bool {
+        self.control() == 0x0
+    }
+
+    #[inline]
+    pub fn control(&self) -> u8 {
+        self.0 >> 7
+    }
+
+    #[inline]
+    pub fn h2(&self) -> u8 {
+        self.0 & MASK
     }
 }
 
@@ -69,7 +72,8 @@ pub struct CbHashMap<K, V, S: BuildHasher = DefaultHashBuilder> {
     // but DOES NOT DECREMENT when removing (since we'll still have a tombstone).
     n_occupied: usize,
     n_items: usize,
-    storage: Box<[Bucket<(K, V)>]>,
+    metadata: Box<[Metadata]>,
+    storage: Box<[Option<(K, V)>]>,
 }
 
 impl<K, V> CbHashMap<K, V> {
@@ -84,7 +88,11 @@ impl<K, V> CbHashMap<K, V> {
             x => 1 << (x.ilog2() + 1),
         };
         let storage = (0..capacity)
-            .map(|_| Bucket::Empty)
+            .map(|_| None)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let metadata = (0..capacity)
+            .map(|_| Metadata::empty())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self {
@@ -93,6 +101,7 @@ impl<K, V> CbHashMap<K, V> {
             n_items: 0,
             n_occupied: 0,
             storage,
+            metadata,
         }
     }
 }
@@ -116,15 +125,20 @@ where
 
     /// Don't grow the table
     fn insert_unchecked(&mut self, k: K, v: V) -> Option<V> {
-        let mut current = self.key_to_index(&k);
+        let (mut current, h2) = self.key_to_index(&k);
         let mut step = 1;
         loop {
-            match &mut self.storage[current] {
-                Bucket::Value(_) => {}
-                x => {
-                    self.n_items += 1;
-                    self.n_occupied += 1;
-                    return x.insert((k, v)).map(|(_, v)| v);
+            let meta = self.metadata[current];
+            if meta.is_empty() || meta.is_tombstone() {
+                self.n_occupied += meta.is_empty() as usize;
+                self.n_items += 1;
+                self.storage[current] = Some((k, v));
+                self.metadata[current] = Metadata::from_h2(h2);
+                return None;
+            } else if meta.is_value() && meta.h2() == h2 {
+                let (kk, vv) = self.storage.get_mut(current).unwrap().as_mut().unwrap();
+                if kk == &k {
+                    return Some(std::mem::replace(vv, v));
                 }
             }
             current = usize::rem_euclid(current + step, self.n_buckets);
@@ -133,18 +147,19 @@ where
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
-        let mut current = self.key_to_index(&k);
+        let (mut current, h2) = self.key_to_index(k);
         let mut step = 1;
         loop {
-            match &mut self.storage[current] {
-                Bucket::Tombstone => {}
-                Bucket::Empty => return None,
-                b @ Bucket::Value(_) => {
-                    let kk = b.as_inner().map(|(kk, _)| kk).unwrap();
-                    if kk == k {
-                        self.n_items -= 1;
-                        return b.remove().map(|(_, v)| v);
-                    }
+            let meta = self.metadata[current];
+            if meta.is_empty() {
+                return None;
+            } else if meta.is_value() && h2 == meta.h2() {
+                let (kk, _) = self.storage[current].as_ref().unwrap();
+                if kk == k {
+                    self.n_items -= 1;
+                    self.metadata[current] = Metadata::tombstone();
+                    let (_, vv) = self.storage[current].take().unwrap();
+                    return Some(vv);
                 }
             }
             current = usize::rem_euclid(current + step, self.n_buckets);
@@ -153,16 +168,16 @@ where
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        let mut current = self.key_to_index(&k);
+        let (mut current, h2) = self.key_to_index(k);
         let mut step = 1;
         loop {
-            match &self.storage[current] {
-                Bucket::Tombstone => {}
-                Bucket::Empty => return None,
-                Bucket::Value((kk, vv)) => {
-                    if kk == k {
-                        return Some(vv);
-                    }
+            let meta = self.metadata[current];
+            if meta.is_empty() {
+                return None;
+            } else if meta.is_value() && h2 == meta.h2() {
+                let (kk, vv) = self.storage[current].as_ref().unwrap();
+                if kk == k {
+                    return Some(vv);
                 }
             }
             current = usize::rem_euclid(current + step, self.n_buckets);
@@ -171,38 +186,42 @@ where
     }
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
-        let mut current = self.key_to_index(&k);
+        let (mut current, h2) = self.key_to_index(k);
         let mut step = 1;
-
-        // Ugh, it's annoying that it won't let me just return from the loop.
         let index = loop {
-            match self.storage.get(current).unwrap() {
-                Bucket::Tombstone => {}
-                Bucket::Empty => break None,
-                Bucket::Value((kk, _)) => {
-                    if kk == k {
-                        break Some(current);
-                    }
+            let meta = self.metadata[current];
+            if meta.is_empty() {
+                break None;
+            } else if meta.is_value() && h2 == meta.h2() {
+                let (kk, _) = self.storage[current].as_ref().unwrap();
+                if kk == k {
+                    break Some(current);
                 }
             }
             current = usize::rem_euclid(current + step, self.n_buckets);
             step += 1;
-        };
-
-        let index = if let Some(i) = index {
-            i
-        } else {
-            return None;
-        };
-        self.storage[index].as_inner_mut().map(|(_, v)| v)
+        }?;
+        self.storage[index].as_mut().map(|(_, v)| v)
     }
 
     pub fn len(&self) -> usize {
         self.n_items
     }
 
-    fn key_to_index(&self, k: &K) -> usize {
-        usize::rem_euclid(make_hash(&self.hasher, &k) as usize, self.n_buckets)
+    pub fn is_empty(&self) -> bool {
+        self.n_items == 0
+    }
+
+    fn hashes(&self, k: &K) -> (u64, u8) {
+        let hash = make_hash(&self.hasher, &k);
+        let h2 = (hash & 0x7F) as u8;
+        let h1 = hash >> 7;
+        (h1, h2)
+    }
+
+    fn key_to_index(&self, k: &K) -> (usize, u8) {
+        let (h1, h2) = self.hashes(k);
+        (usize::rem_euclid(h1 as usize, self.n_buckets), h2)
     }
 
     fn needs_grow(&self) -> bool {
@@ -217,16 +236,23 @@ where
             self.n_buckets * 2
         };
         let new_storage = (0..capacity)
-            .map(|_| Bucket::Empty)
+            .map(|_| None)
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
-        self.n_buckets = capacity;
+        let new_metadata = (0..capacity)
+            .map(|_| Metadata::empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let old_metadata = std::mem::replace(&mut self.metadata, new_metadata);
 
+        self.n_buckets = capacity;
         self.n_items = 0;
         self.n_occupied = 0;
-        for bucket in Vec::from(old_storage).into_iter() {
-            if let Bucket::Value((k, v)) = bucket {
+
+        for (&meta, slot) in old_metadata.iter().zip(Vec::from(old_storage).into_iter()) {
+            if meta.is_value() {
+                let (k, v) = slot.unwrap();
                 self.insert_unchecked(k, v);
             }
         }
@@ -284,5 +310,29 @@ mod tests {
         }
 
         assert_eq!(map.len(), 1000);
+    }
+
+    #[test]
+    fn remove_and_reinsert() {
+        let mut map = CbHashMap::new();
+        let range = 0..1000;
+
+        for i in range.clone() {
+            map.insert(i, i);
+        }
+        assert_eq!(map.len(), 1000);
+
+        let buckets = map.n_buckets;
+        for i in range.clone() {
+            assert_eq!(map.remove(&i), Some(i));
+        }
+        assert_eq!(map.len(), 0);
+        assert_eq!(buckets, map.n_buckets);
+
+        for i in range {
+            map.insert(i, i);
+        }
+        assert_eq!(map.len(), 1000);
+        assert_eq!(buckets, map.n_buckets);
     }
 }
