@@ -1,5 +1,8 @@
+#![feature(new_uninit)]
+
 use core::hash::{BuildHasher, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::mem::MaybeUninit;
 
 // Use std's default hasher.
 pub type DefaultHashBuilder = core::hash::BuildHasherDefault<DefaultHasher>;
@@ -65,6 +68,11 @@ impl Metadata {
 }
 
 /// Open addressing, quadratic probing
+///
+/// Now using MaybeUninit to avoid having to zero the whole backing storage.
+///
+/// SAFETY: Our invariant is that self.storage[index] is always initialized if self.metadata[index]
+/// is_tombstone or is_value.
 pub struct CbHashMap<K, V, S: BuildHasher = DefaultHashBuilder> {
     hasher: S,
     n_buckets: usize,
@@ -73,7 +81,7 @@ pub struct CbHashMap<K, V, S: BuildHasher = DefaultHashBuilder> {
     n_occupied: usize,
     n_items: usize,
     metadata: Box<[Metadata]>,
-    storage: Box<[Option<(K, V)>]>,
+    storage: Box<[MaybeUninit<(K, V)>]>,
 }
 
 impl<K, V> CbHashMap<K, V> {
@@ -87,10 +95,7 @@ impl<K, V> CbHashMap<K, V> {
             x if x < 16 => 16,
             x => 1 << (x.ilog2() + 1),
         };
-        let storage = (0..capacity)
-            .map(|_| None)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let storage = Box::new_uninit_slice(capacity);
         let metadata = (0..capacity)
             .map(|_| Metadata::empty())
             .collect::<Vec<_>>()
@@ -132,11 +137,13 @@ where
             if meta.is_empty() || meta.is_tombstone() {
                 self.n_occupied += meta.is_empty() as usize;
                 self.n_items += 1;
-                self.storage[current] = Some((k, v));
+                self.storage[current].write((k, v));
                 self.metadata[current] = Metadata::from_h2(h2);
                 return None;
             } else if meta.is_value() && meta.h2() == h2 {
-                let (kk, vv) = self.storage.get_mut(current).unwrap().as_mut().unwrap();
+                // SAFETY: According to our invariant and the above condition,
+                // self.storage[current] is initialized.
+                let (kk, vv) = unsafe { self.storage[current].assume_init_mut() };
                 if kk == &k {
                     return Some(std::mem::replace(vv, v));
                 }
@@ -154,11 +161,14 @@ where
             if meta.is_empty() {
                 return None;
             } else if meta.is_value() && h2 == meta.h2() {
-                let (kk, _) = self.storage[current].as_ref().unwrap();
+                // SAFETY: According to our invariant and the above condition,
+                // self.storage[current] is initialized.
+                let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
                     self.n_items -= 1;
                     self.metadata[current] = Metadata::tombstone();
-                    let (_, vv) = self.storage[current].take().unwrap();
+                    let slot = std::mem::replace(&mut self.storage[current], MaybeUninit::uninit());
+                    let (_, vv) = unsafe { slot.assume_init() };
                     return Some(vv);
                 }
             }
@@ -175,7 +185,9 @@ where
             if meta.is_empty() {
                 return None;
             } else if meta.is_value() && h2 == meta.h2() {
-                let (kk, vv) = self.storage[current].as_ref().unwrap();
+                // SAFETY: According to our invariant and the above condition,
+                // self.storage[current] is initialized.
+                let (kk, vv) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
                     return Some(vv);
                 }
@@ -193,7 +205,9 @@ where
             if meta.is_empty() {
                 break None;
             } else if meta.is_value() && h2 == meta.h2() {
-                let (kk, _) = self.storage[current].as_ref().unwrap();
+                // SAFETY: According to our invariant and the above condition,
+                // self.storage[current] is initialized.
+                let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
                     break Some(current);
                 }
@@ -201,7 +215,10 @@ where
             current = usize::rem_euclid(current + step, self.n_buckets);
             step += 1;
         }?;
-        self.storage[index].as_mut().map(|(_, v)| v)
+
+        // SAFETY: self.metadata[index] had a value, so self.storage[index] is initialized.
+        let v = unsafe { &mut self.storage[index].assume_init_mut().1 };
+        Some(v)
     }
 
     pub fn len(&self) -> usize {
@@ -235,10 +252,7 @@ where
         } else {
             self.n_buckets * 2
         };
-        let new_storage = (0..capacity)
-            .map(|_| None)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let new_storage = Box::new_uninit_slice(capacity);
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
         let new_metadata = (0..capacity)
             .map(|_| Metadata::empty())
@@ -252,7 +266,9 @@ where
 
         for (&meta, slot) in old_metadata.iter().zip(Vec::from(old_storage).into_iter()) {
             if meta.is_value() {
-                let (k, v) = slot.unwrap();
+                // SAFETY: According to our invariant and the above condition,
+                // `slot` is initialized.
+                let (k, v) = unsafe { slot.assume_init() };
                 self.insert_unchecked(k, v);
             }
         }
