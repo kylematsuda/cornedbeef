@@ -204,7 +204,7 @@ where
 
     /// Used for testing
     #[inline]
-    pub(crate) fn n_buckets(&self) -> usize {
+    fn n_buckets(&self) -> usize {
         self.storage.len()
     }
 
