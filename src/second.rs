@@ -2,7 +2,7 @@
 
 use core::hash::{BuildHasher, Hash};
 
-use crate::{make_hash, DefaultHashBuilder};
+use crate::{fix_capacity, make_hash, DefaultHashBuilder};
 
 pub enum Bucket<K, V> {
     Empty,
@@ -55,11 +55,7 @@ impl<K, V> Map<K, V> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let capacity = match capacity {
-            0 => 0,
-            x if x < 16 => 16,
-            y => 1 << (y.ilog2() + 1),
-        };
+        let capacity = fix_capacity(capacity);
 
         let storage = (0..capacity)
             .map(|_| Bucket::Empty)
