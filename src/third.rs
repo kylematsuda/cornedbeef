@@ -132,7 +132,7 @@ where
                 }
             }
 
-            current = usize::rem_euclid(current + step, self.storage.len());
+            current = usize::rem_euclid(current + step, self.n_buckets());
             step += 1;
 
             // We've seen every element in `storage`!
@@ -202,22 +202,28 @@ where
         self.n_items == 0
     }
 
+    /// Used for testing
+    #[inline]
+    pub(crate) fn n_buckets(&self) -> usize {
+        self.storage.len()
+    }
+
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
         let hash = make_hash(&self.hasher, k);
         let (h1, h2) = (hash >> 7, (hash & 0x7F) as u8);
-        let index = usize::rem_euclid(h1 as usize, self.storage.len());
+        let index = usize::rem_euclid(h1 as usize, self.n_buckets());
         (index, h2)
     }
 
     fn needs_resize(&self) -> bool {
         // Using a load factor of 7/8.
         // NOTE: we need to use n_occupied instead of n_items here!
-        self.storage.len() == 0 || ((self.n_occupied * 8) / self.storage.len()) > 7
+        self.n_buckets() == 0 || ((self.n_occupied * 8) / self.n_buckets()) > 7
     }
 
     fn resize(&mut self) {
         // Calculate the new capacity.
-        let capacity = match self.storage.len() {
+        let capacity = match self.n_buckets() {
             0 => 16,
             x => x * 2,
         };
@@ -249,78 +255,5 @@ where
 #[cfg(test)]
 mod tests {
     use crate::third::Map;
-
-    #[test]
-    fn insert() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 0..1000 {
-            assert_eq!(map.get(&i), Some(&i));
-        }
-    }
-
-    #[test]
-    fn remove() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 0..1000 {
-            assert_eq!(map.remove(&i), Some(i));
-        }
-
-        assert_eq!(map.len(), 0);
-    }
-
-    #[test]
-    fn miss() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 1000..2000 {
-            assert!(map.get(&i).is_none());
-        }
-
-        assert_eq!(map.len(), 1000);
-    }
-
-    #[test]
-    fn remove_and_reinsert() {
-        let mut map = Map::new();
-        let range = 0..1000;
-
-        for i in range.clone() {
-            map.insert(i, i);
-        }
-        assert_eq!(map.len(), 1000);
-
-        let buckets = map.storage.len();
-        for i in range.clone() {
-            assert_eq!(map.remove(&i), Some(i));
-        }
-        assert_eq!(map.len(), 0);
-        assert_eq!(buckets, map.storage.len());
-
-        for i in range {
-            map.insert(i, i);
-        }
-        assert_eq!(map.len(), 1000);
-        // Note that the above loop will trigger a resize because we have a ton of tombstones.
-        assert_eq!(buckets * 2, map.storage.len());
-    }
+    crate::generate_tests!(Map, true);
 }

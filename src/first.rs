@@ -111,19 +111,25 @@ where
         self.n_items == 0
     }
 
+    /// Used for testing
+    #[inline]
+    pub(crate) fn n_buckets(&self) -> usize {
+        self.storage.len()
+    }
+
     fn bucket_index(&self, k: &K) -> usize {
         let hash = make_hash(&self.hasher, k);
-        usize::rem_euclid(hash as usize, self.storage.len())
+        usize::rem_euclid(hash as usize, self.n_buckets())
     }
 
     fn needs_resize(&self) -> bool {
         // Using a load factor of 7/8.
-        self.storage.len() == 0 || ((self.n_items * 8) / self.storage.len()) > 7
+        self.n_buckets() == 0 || ((self.n_items * 8) / self.n_buckets()) > 7
     }
 
     fn resize(&mut self) {
         // Calculate the new capacity.
-        let capacity = match self.storage.len() {
+        let capacity = match self.n_buckets() {
             0 => 16,
             x => x * 2,
         };
@@ -157,77 +163,5 @@ where
 #[cfg(test)]
 mod tests {
     use crate::first::Map;
-
-    #[test]
-    fn insert() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 0..1000 {
-            assert_eq!(map.get(&i), Some(&i));
-        }
-    }
-
-    #[test]
-    fn remove() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 0..1000 {
-            assert_eq!(map.remove(&i), Some(i));
-        }
-
-        assert_eq!(map.len(), 0);
-    }
-
-    #[test]
-    fn miss() {
-        let mut map = Map::new();
-
-        for i in 0..1000 {
-            map.insert(i, i);
-        }
-
-        assert_eq!(map.len(), 1000);
-
-        for i in 1000..2000 {
-            assert!(map.get(&i).is_none());
-        }
-
-        assert_eq!(map.len(), 1000);
-    }
-
-    #[test]
-    fn remove_and_reinsert() {
-        let mut map = Map::new();
-        let range = 0..1000;
-
-        for i in range.clone() {
-            map.insert(i, i);
-        }
-        assert_eq!(map.len(), 1000);
-
-        let buckets = map.storage.len();
-        for i in range.clone() {
-            assert_eq!(map.remove(&i), Some(i));
-        }
-        assert_eq!(map.len(), 0);
-        assert_eq!(buckets, map.storage.len());
-
-        for i in range {
-            map.insert(i, i);
-        }
-        assert_eq!(map.len(), 1000);
-        assert_eq!(buckets, map.storage.len());
-    }
+    crate::generate_tests!(Map, false);
 }
