@@ -13,18 +13,8 @@ pub struct Metadata(u8);
 
 impl Metadata {
     #[inline]
-    pub fn from_hash(hash: u64) -> Self {
-        Self((hash & (MASK as u64)) as u8)
-    }
-
-    #[inline]
     pub fn from_h2(h2: u8) -> Self {
-        Self(h2 & 0x7F)
-    }
-
-    pub fn from_key<S: BuildHasher, K: Hash>(hasher: &S, k: &K) -> Self {
-        let hash = make_hash(hasher, k);
-        Self::from_hash(hash)
+        Self(h2 & MASK)
     }
 
     #[inline]
@@ -49,12 +39,7 @@ impl Metadata {
 
     #[inline]
     pub fn is_value(&self) -> bool {
-        self.control() == 0x0
-    }
-
-    #[inline]
-    pub fn control(&self) -> u8 {
-        self.0 >> 7
+        (self.0 >> 7) == 0x0
     }
 
     #[inline]
@@ -64,7 +49,7 @@ impl Metadata {
 }
 
 pub enum ProbeResult {
-    Empty(usize),
+    Empty(usize, u8),
     Full(usize),
     End,
 }
@@ -124,7 +109,7 @@ where
             let meta = &self.metadata[current];
 
             if meta.is_empty() {
-                return ProbeResult::Empty(current);
+                return ProbeResult::Empty(current, h2);
             } else if meta.is_value() && meta.h2() == h2 {
                 let (kk, _) = self.storage[current].as_ref().unwrap();
                 if kk == k {
@@ -144,14 +129,14 @@ where
 
     pub fn get(&self, k: &K) -> Option<&V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(..) | ProbeResult::End => None,
             ProbeResult::Full(index) => self.storage[index].as_ref().map(|(_, v)| v),
         }
     }
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(..) | ProbeResult::End => None,
             ProbeResult::Full(index) => self.storage[index].as_mut().map(|(_, v)| v),
         }
     }
@@ -165,8 +150,8 @@ where
 
     fn _insert(&mut self, k: K, v: V) -> Option<V> {
         match self.probe_find(&k) {
-            ProbeResult::Empty(index) => {
-                self.metadata[index] = Metadata::from_key(&self.hasher, &k);
+            ProbeResult::Empty(index, h2) => {
+                self.metadata[index] = Metadata::from_h2(h2);
                 self.storage[index] = Some((k, v));
                 self.n_items += 1;
                 self.n_occupied += 1;
@@ -184,7 +169,7 @@ where
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(..) | ProbeResult::End => None,
             ProbeResult::Full(index) => {
                 let old_bucket = self.storage[index].take();
                 self.metadata[index] = Metadata::tombstone();
