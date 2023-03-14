@@ -1,6 +1,6 @@
 //! Defines the group for SSE probing.
 
-use std::simd;
+use std::simd::{self, SimdPartialEq};
 
 use crate::metadata::{self, Metadata};
 
@@ -37,26 +37,15 @@ impl<'a> Group<'a> {
 
     /// TODO: implement with SIMD instructions.
     pub fn get_empty(&self) -> simd::Mask<i8, GROUP_SIZE> {
-        let mut empties = [false; GROUP_SIZE];
-        for i in 0..GROUP_SIZE {
-            // Eventually, change this to get_unchecked to elide bounds check.
-            let entry = self.array[i];
-            if metadata::is_empty(entry) {
-                empties[i] = true;
-            }
-        }
-        simd::Mask::from_array(empties)
+        let empty = simd::Simd::<u8, GROUP_SIZE>::splat(metadata::empty());
+        let metadata = simd::Simd::<u8, GROUP_SIZE>::from_slice(self.array);
+        empty.simd_eq(metadata)
     }
 
     /// TODO: implement with SIMD instructions.
     pub fn get_candidates(&self, h2: u8) -> simd::Mask<i8, GROUP_SIZE> {
-        let mut candidates = [false; GROUP_SIZE];
-        for i in 0..GROUP_SIZE {
-            let entry = self.array[i];
-            if metadata::is_value(entry) && metadata::h2(entry) == h2 {
-                candidates[i] = true;
-            }
-        }
-        simd::Mask::from_array(candidates)
+        let h2 = simd::Simd::<u8, GROUP_SIZE>::splat(h2);
+        let metadata = simd::Simd::<u8, GROUP_SIZE>::from_slice(self.array);
+        h2.simd_eq(metadata)
     }
 }
