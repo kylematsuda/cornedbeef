@@ -1,8 +1,9 @@
-#![feature(new_uninit)]
+#![feature(new_uninit, allocator_api, slice_ptr_get, nonnull_slice_from_raw_parts)]
 
 use core::hash::{BuildHasher, Hasher};
 use std::collections::hash_map::DefaultHasher;
 
+pub mod fifth;
 pub mod first;
 pub mod fourth;
 pub mod second;
@@ -31,7 +32,7 @@ fn fix_capacity(capacity: usize) -> usize {
     }
 }
 
-pub use first::Map as CbHashMap;
+pub use fifth::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]
