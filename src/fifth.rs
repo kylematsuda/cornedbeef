@@ -5,50 +5,7 @@ use core::hash::{BuildHasher, Hash};
 use std::mem::MaybeUninit;
 
 use crate::{fix_capacity, make_hash, DefaultHashBuilder};
-
-const EMPTY: u8 = 0x80;
-const TOMBSTONE: u8 = 0xFE;
-const MASK: u8 = 0x7F;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Metadata(u8);
-
-impl Metadata {
-    #[inline]
-    pub fn from_h2(h2: u8) -> Self {
-        Self(h2 & MASK)
-    }
-
-    #[inline]
-    pub fn empty() -> Self {
-        Self(EMPTY)
-    }
-
-    #[inline]
-    pub fn tombstone() -> Self {
-        Self(TOMBSTONE)
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.0 == EMPTY
-    }
-
-    #[inline]
-    pub fn is_tombstone(&self) -> bool {
-        self.0 == TOMBSTONE
-    }
-
-    #[inline]
-    pub fn is_value(&self) -> bool {
-        (self.0 >> 7) == 0x0
-    }
-
-    #[inline]
-    pub fn h2(&self) -> u8 {
-        self.0 & MASK
-    }
-}
+use crate::metadata::{self, Metadata};
 
 pub enum ProbeResult {
     Empty(usize, u8),
@@ -77,7 +34,7 @@ impl<K, V> Map<K, V> {
         let storage = Box::new_uninit_slice(capacity);
 
         let metadata = (0..capacity)
-            .map(|_| Metadata::empty())
+            .map(|_| metadata::empty())
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
@@ -107,11 +64,11 @@ where
         let mut step = 1;
 
         loop {
-            let meta = &self.metadata[current];
+            let meta = self.metadata[current];
 
-            if meta.is_empty() {
+            if metadata::is_empty(meta) {
                 return ProbeResult::Empty(current, h2);
-            } else if meta.is_value() && meta.h2() == h2 {
+            } else if metadata::is_value(meta) && metadata::h2(meta) == h2 {
                 // SAFETY: we checked the invariant that `meta.is_value()`.
                 let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
@@ -161,7 +118,7 @@ where
     fn _insert(&mut self, k: K, v: V) -> Option<V> {
         match self.probe_find(&k) {
             ProbeResult::Empty(index, h2) => {
-                self.metadata[index] = Metadata::from_h2(h2);
+                self.metadata[index] = metadata::from_h2(h2);
                 self.storage[index].write((k, v));
                 self.n_items += 1;
                 self.n_occupied += 1;
@@ -185,7 +142,7 @@ where
                 let old_bucket = std::mem::replace(&mut self.storage[index], MaybeUninit::uninit());
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, vv) = unsafe { old_bucket.assume_init() };
-                self.metadata[index] = Metadata::tombstone();
+                self.metadata[index] = metadata::tombstone();
                 self.n_items -= 1;
                 Some(vv)
             }
@@ -231,7 +188,7 @@ where
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
         let new_metadata = (0..capacity)
-            .map(|_| Metadata::empty())
+            .map(|_| metadata::empty())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         // Here, we need to keep the old metadata, as it's unsafe to blindly access the old storage
@@ -243,7 +200,7 @@ where
 
         // Move nodes from `old_storage` to `self.storage`.
         for (&metadata, bucket) in old_metadata.iter().zip(Vec::from(old_storage).into_iter()) {
-            if metadata.is_value() {
+            if metadata::is_value(metadata) {
                 // SAFETY: we just checked the invariant above.
                 let (k, v) = unsafe { bucket.assume_init() };
                 self._insert(k, v);

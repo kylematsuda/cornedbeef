@@ -17,6 +17,9 @@ pub mod second;
 pub mod sixth;
 pub mod third;
 
+mod metadata;
+mod sse;
+
 /// Hash builder for std's default hasher.
 pub type DefaultHashBuilder = core::hash::BuildHasherDefault<DefaultHasher>;
 
