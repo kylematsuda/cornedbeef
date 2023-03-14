@@ -72,13 +72,11 @@ impl<K, V> Map<K, V> {
 
         let storage = (0..capacity)
             .map(|_| None)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
 
         let metadata = (0..capacity)
             .map(|_| Metadata::empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
 
         Self {
             hasher: DefaultHashBuilder::default(),
@@ -216,15 +214,13 @@ where
         // Set `self.storage` to a new array.
         let new_storage = (0..capacity)
             .map(|_| None)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
         // We can throw away the old metadata, we need to recompute it anyway.
         self.metadata = (0..capacity)
             .map(|_| Metadata::empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
 
         self.n_items = 0;
         self.n_occupied = 0;

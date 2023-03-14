@@ -21,8 +21,7 @@ impl<K, V> Map<K, V> {
 
         let storage = (0..capacity)
             .map(|_| LinkedList::new())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
 
         Self {
             hasher: DefaultHashBuilder::default(),
@@ -137,8 +136,7 @@ where
         // Set `self.storage` to a new array.
         let new_storage = (0..capacity)
             .map(|_| LinkedList::new())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
         self.n_items = 0;
