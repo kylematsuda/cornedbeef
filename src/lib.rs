@@ -118,5 +118,16 @@ macro_rules! generate_tests {
             let buckets = if $should_resize { buckets * 2 } else { buckets };
             assert_eq!(buckets, map.n_buckets());
         }
+
+        #[test]
+        fn insert_nontrivial_drop() {
+            let mut map = $map::new();
+            let items = (0..1000).map(|i| (i.to_string(), i.to_string()));
+
+            for (k, v) in items {
+                map.insert(k, v);
+            }
+            assert_eq!(map.len(), 1000);
+        }
     };
 }

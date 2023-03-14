@@ -112,14 +112,14 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder, A: Allocator + Clone =
     storage: NonNull<MaybeUninit<(K, V)>>,
 }
 
-impl<K, V, S, A> Drop for Map<K, V, S, A> 
+impl<K, V, S, A> Drop for Map<K, V, S, A>
 where
     S: BuildHasher,
-    A: Allocator + Clone
+    A: Allocator + Clone,
 {
     fn drop(&mut self) {
         if self.n_buckets > 0 {
-            let (layout, _) = layout_for_capacity::<K, V>(self.n_buckets); 
+            let (layout, _) = layout_for_capacity::<K, V>(self.n_buckets);
             unsafe {
                 self.allocator.deallocate(self.metadata.cast(), layout);
             }
@@ -435,5 +435,16 @@ mod tests {
         }
         assert_eq!(map.len(), 1000);
         assert_eq!(buckets * 2, map.n_buckets());
+    }
+
+    #[test]
+    fn insert_nontrivial_drop() {
+        let mut map = Map::new();
+        let items = (0..1000).map(|i| (i.to_string(), i.to_string()));
+
+        for (k, v) in items {
+            map.insert(k, v);
+        }
+        assert_eq!(map.len(), 1000);
     }
 }
