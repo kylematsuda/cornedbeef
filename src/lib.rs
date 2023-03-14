@@ -39,7 +39,7 @@ fn fix_capacity(capacity: usize) -> usize {
     match capacity {
         0 => 0,
         x if x < 16 => 16,
-        x => 1 << (x.ilog2() + 1),
+        x => x.next_power_of_two()
     }
 }
 
