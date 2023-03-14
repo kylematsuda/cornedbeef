@@ -2,6 +2,7 @@
 //! Uses SSE instructions on the metadata.
 
 use core::hash::{BuildHasher, Hash};
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use crate::metadata::{self, Metadata};
@@ -23,6 +24,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     storage: Box<[MaybeUninit<(K, V)>]>,
     /// Contains an extra `GROUP_SIZE` elements to avoid wrapping SIMD access
     metadata: Box<[Metadata]>,
+    _ph: PhantomData<(K, V)>,
 }
 
 impl<K, V> Map<K, V> {
@@ -50,6 +52,7 @@ impl<K, V> Map<K, V> {
             n_occupied: 0,
             storage,
             metadata,
+            _ph: PhantomData,
         }
     }
 }
@@ -57,6 +60,36 @@ impl<K, V> Map<K, V> {
 impl<K, V> Default for Map<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K, V, S: BuildHasher> Drop for Map<K, V, S> {
+    fn drop(&mut self) {
+        if self.n_buckets() > 0 {
+            for (i, &meta) in self.metadata.iter().enumerate().take(self.n_buckets()) {
+                if metadata::is_value(meta) {
+                    let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
+                    // Drop `_k` and `_v`.
+                    let (_k, _v) = unsafe { val.assume_init() };
+                }
+            }
+        }
+    }
+}
+
+impl<K, V, S: BuildHasher> Map<K, V, S> {
+    pub fn len(&self) -> usize {
+        self.n_items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.n_items == 0
+    }
+
+    /// Used for tests
+    #[inline]
+    fn n_buckets(&self) -> usize {
+        self.storage.len()
     }
 }
 
@@ -215,20 +248,6 @@ where
             }
             _ => metadata::tombstone(),
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.n_items
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.n_items == 0
-    }
-
-    /// Used for tests
-    #[inline]
-    fn n_buckets(&self) -> usize {
-        self.storage.len()
     }
 
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {

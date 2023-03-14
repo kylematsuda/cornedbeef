@@ -2,6 +2,7 @@
 //! This is similar to the one in `third`, except using MaybeUninit as an optimization.
 
 use core::hash::{BuildHasher, Hash};
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use crate::{fix_capacity, make_hash, DefaultHashBuilder};
@@ -64,6 +65,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     /// `self.storage[i]` is initialized whenever `self.metadata[i].is_value()`.
     storage: Box<[MaybeUninit<(K, V)>]>,
     metadata: Box<[Metadata]>,
+    _ph: PhantomData<(K, V)>,
 }
 
 impl<K, V> Map<K, V> {
@@ -87,6 +89,7 @@ impl<K, V> Map<K, V> {
             n_occupied: 0,
             storage,
             metadata,
+            _ph: PhantomData,
         }
     }
 }
@@ -94,6 +97,23 @@ impl<K, V> Map<K, V> {
 impl<K, V> Default for Map<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K, V, S> Drop for Map<K, V, S>
+where
+    S: BuildHasher,
+{
+    fn drop(&mut self) {
+        if self.storage.len() > 0 {
+            for (i, &m) in self.metadata.iter().enumerate() {
+                if m.is_value() {
+                    let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
+                    // Drop `_k` and `_v`.
+                    let (_k, _v) = unsafe { val.assume_init() };
+                }
+            }
+        }
     }
 }
 
