@@ -62,7 +62,7 @@ pub fn insert_grow_seq(c: &mut Criterion) {
     let mut group = c.benchmark_group("insert_grow_seq");
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_grow!(StdHashMap, 0..SIZE, LEN),
@@ -74,7 +74,7 @@ pub fn insert_grow_seq(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_grow!(StdHashMap, 0..SIZE, LEN),
@@ -92,7 +92,7 @@ pub fn insert_grow_random(c: &mut Criterion) {
     let seq = RandomKeys::new();
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_grow!(StdHashMap, seq.take(SIZE), LEN),
@@ -104,7 +104,7 @@ pub fn insert_grow_random(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_grow!(StdHashMap, seq.take(SIZE), LEN),
@@ -135,7 +135,7 @@ pub fn insert_reserved_random(c: &mut Criterion) {
     let seq = RandomKeys::new();
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
@@ -147,7 +147,7 @@ pub fn insert_reserved_random(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
@@ -182,7 +182,7 @@ pub fn lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("lookup");
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_lookup!(StdHashMap, SIZE, LEN),
@@ -194,7 +194,7 @@ pub fn lookup(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_lookup!(StdHashMap, SIZE, LEN),
@@ -230,7 +230,7 @@ pub fn lookup_miss(c: &mut Criterion) {
     let mut group = c.benchmark_group("lookup_miss");
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_lookup_miss!(StdHashMap, SIZE, LEN),
@@ -242,7 +242,7 @@ pub fn lookup_miss(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_lookup_miss!(StdHashMap, SIZE, LEN),
@@ -278,7 +278,7 @@ pub fn remove(c: &mut Criterion) {
     let mut group = c.benchmark_group("remove");
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_remove!(StdHashMap, SIZE, LEN),
@@ -290,7 +290,7 @@ pub fn remove(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_remove!(StdHashMap, SIZE, LEN),
@@ -326,7 +326,7 @@ pub fn remove_miss(c: &mut Criterion) {
     let mut group = c.benchmark_group("remove_miss");
 
     {
-        const LEN: usize = 4;
+        const LEN: usize = 1;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_remove_miss!(StdHashMap, SIZE, LEN),
@@ -338,7 +338,7 @@ pub fn remove_miss(c: &mut Criterion) {
     }
 
     {
-        const LEN: usize = 100;
+        const LEN: usize = 8;
         group.bench_function(
             BenchmarkId::new("std", LEN),
             bench_remove_miss!(StdHashMap, SIZE, LEN),
