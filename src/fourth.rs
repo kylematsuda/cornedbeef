@@ -119,6 +119,22 @@ where
     }
 }
 
+impl<K, V> Map<K, V> {
+    pub fn len(&self) -> usize {
+        self.n_items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.n_items == 0
+    }
+
+    /// Used for testing
+    #[inline]
+    fn n_buckets(&self) -> usize {
+        self.storage.len()
+    }
+}
+
 impl<K, V> Map<K, V>
 where
     K: PartialEq + Eq + Hash,
@@ -212,20 +228,6 @@ where
                 Some(vv)
             }
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.n_items
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.n_items == 0
-    }
-
-    /// Used for tests
-    #[inline]
-    fn n_buckets(&self) -> usize {
-        self.storage.len()
     }
 
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
