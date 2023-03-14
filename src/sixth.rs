@@ -119,13 +119,15 @@ where
     A: Allocator + Clone,
 {
     fn drop(&mut self) {
-        for offset in 0..(self.n_buckets as isize) {
-            unsafe {
-                let metadata = self.metadata.as_ptr().offset(offset);
-                let storage = self.storage.as_ptr().offset(offset);
+        if std::mem::needs_drop::<(K, V)>() {
+            for offset in 0..(self.n_buckets as isize) {
+                unsafe {
+                    let metadata = self.metadata.as_ptr().offset(offset);
+                    let storage = self.storage.as_ptr().offset(offset);
 
-                if (*metadata).is_value() {
-                    let (_k, _v) = std::ptr::read(storage).assume_init();
+                    if (*metadata).is_value() {
+                        let (_k, _v) = std::ptr::read(storage).assume_init();
+                    }
                 }
             }
         }

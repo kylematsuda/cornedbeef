@@ -43,7 +43,7 @@ fn fix_capacity(capacity: usize) -> usize {
     }
 }
 
-pub use fifth::Map as CbHashMap;
+pub use sixth::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]

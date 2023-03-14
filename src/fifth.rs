@@ -39,11 +39,11 @@ impl<K, V> Map<K, V> {
 
         let metadata = if capacity == 0 {
             Box::new([])
-        } else { 
+        } else {
             (0..(capacity + GROUP_SIZE))
-            .map(|_| metadata::empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
+                .map(|_| metadata::empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
         };
 
         Self {
@@ -106,16 +106,15 @@ where
         let mut step = 1;
 
         loop {
-            let meta = &self.metadata[current..(current + GROUP_SIZE)];
-            let probe = sse::Group::new(meta.try_into().unwrap());
+            let probe = sse::Group::new(&self.metadata, current);
 
             // First, check full buckets.
             let candidates = probe.get_candidates(h2);
             for i in 0..GROUP_SIZE {
-                if candidates.test(i) {
+                if unsafe { candidates.test_unchecked(i) } {
                     let index = usize::rem_euclid(current + i, self.n_buckets());
                     // SAFETY: we checked the invariant that `meta.is_value()`.
-                    let (kk, _) = unsafe { self.storage[index].assume_init_ref() };
+                    let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
                     if kk == k {
                         return ProbeResult::Full(index);
                     }
@@ -126,7 +125,7 @@ where
             // Look for the first empty bucket.
             let empties = probe.get_empty();
             for i in 0..GROUP_SIZE {
-                if empties.test(i) {
+                if unsafe { empties.test_unchecked(i) } {
                     let index = usize::rem_euclid(current + i, self.n_buckets());
                     return ProbeResult::Empty(index, h2);
                 }
@@ -146,6 +145,7 @@ where
         }
     }
 
+    #[inline]
     fn set_metadata(&mut self, index: usize, value: Metadata) {
         self.metadata[index] = value;
         if index < GROUP_SIZE {
@@ -230,13 +230,11 @@ where
             return metadata::empty();
         }
 
-        let probe_current =
-            sse::Group::new(&self.metadata[index..(index + GROUP_SIZE)]).get_empty();
+        let probe_current = sse::Group::new(&self.metadata, index).get_empty();
         let next_empty = sse::find_first(&probe_current);
 
         let previous = usize::rem_euclid(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
-        let probe_previous =
-            sse::Group::new(&self.metadata[previous..(previous + GROUP_SIZE)]).get_empty();
+        let probe_previous = sse::Group::new(&self.metadata, previous).get_empty();
         let last_empty = sse::find_last(&probe_previous);
 
         match (last_empty, next_empty) {
