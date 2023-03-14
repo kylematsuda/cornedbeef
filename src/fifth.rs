@@ -110,6 +110,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder, A: Allocator + Clone =
     /// - `storage[i]` is initialized if `metadata[i].is_value()`.
     metadata: NonNull<Metadata>,
     storage: NonNull<MaybeUninit<(K, V)>>,
+    _ph: std::marker::PhantomData<(K, V)>,
 }
 
 impl<K, V, S, A> Drop for Map<K, V, S, A>
@@ -118,6 +119,17 @@ where
     A: Allocator + Clone,
 {
     fn drop(&mut self) {
+        for offset in 0..(self.n_buckets as isize) {
+            unsafe {
+                let metadata = self.metadata.as_ptr().offset(offset);
+                let storage = self.storage.as_ptr().offset(offset);
+
+                if (*metadata).is_value() {
+                    let (_k, _v) = std::ptr::read(storage).assume_init();
+                }
+            }
+        }
+
         if self.n_buckets > 0 {
             let (layout, _) = layout_for_capacity::<K, V>(self.n_buckets);
             unsafe {
@@ -150,6 +162,7 @@ impl<K, V> Map<K, V> {
             n_buckets: capacity,
             storage,
             metadata,
+            _ph: std::marker::PhantomData,
         }
     }
 }
@@ -364,6 +377,12 @@ where
 #[cfg(test)]
 mod tests {
     use crate::fifth::Map;
+
+    #[test]
+    fn drop_empty_map() {
+        let _ = Map::<String, String>::new();
+    }
+
     #[test]
     fn insert() {
         let mut map = Map::new();
@@ -443,6 +462,17 @@ mod tests {
         let items = (0..1000).map(|i| (i.to_string(), i.to_string()));
 
         for (k, v) in items {
+            map.insert(k, v);
+        }
+        assert_eq!(map.len(), 1000);
+    }
+
+    #[test]
+    fn insert_borrowed_data() {
+        let items = (0..1000).map(|i| (i.to_string(), i.to_string())).collect::<Vec<_>>();
+        let mut map = Map::new();
+
+        for (k, v) in &items {
             map.insert(k, v);
         }
         assert_eq!(map.len(), 1000);
