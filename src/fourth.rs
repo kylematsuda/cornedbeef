@@ -105,12 +105,14 @@ where
     S: BuildHasher,
 {
     fn drop(&mut self) {
-        if self.storage.len() > 0 {
-            for (i, &m) in self.metadata.iter().enumerate() {
-                if m.is_value() {
-                    let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
-                    // Drop `_k` and `_v`.
-                    let (_k, _v) = unsafe { val.assume_init() };
+        if std::mem::needs_drop::<(K, V)>() {
+            if self.storage.len() > 0 {
+                for (i, &m) in self.metadata.iter().enumerate() {
+                    if m.is_value() {
+                        let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
+                        // Drop `_k` and `_v`.
+                        let (_k, _v) = unsafe { val.assume_init() };
+                    }
                 }
             }
         }

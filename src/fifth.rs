@@ -39,11 +39,11 @@ impl<K, V> Map<K, V> {
 
         let metadata = if capacity == 0 {
             Box::new([])
-        } else {
+        } else { 
             (0..(capacity + GROUP_SIZE))
-                .map(|_| metadata::empty())
-                .collect::<Vec<_>>()
-                .into_boxed_slice()
+            .map(|_| metadata::empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
         };
 
         Self {
@@ -65,12 +65,15 @@ impl<K, V> Default for Map<K, V> {
 
 impl<K, V, S: BuildHasher> Drop for Map<K, V, S> {
     fn drop(&mut self) {
-        if self.n_buckets() > 0 {
-            for (i, &meta) in self.metadata.iter().enumerate().take(self.n_buckets()) {
-                if metadata::is_value(meta) {
-                    let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
-                    // Drop `_k` and `_v`.
-                    let (_k, _v) = unsafe { val.assume_init() };
+        // Without this check, dropping an empty map with large capacity is REALLY SLOW
+        if std::mem::needs_drop::<(K, V)>() {
+            if self.n_buckets() > 0 {
+                for (i, &meta) in self.metadata.iter().enumerate().take(self.n_buckets()) {
+                    if metadata::is_value(meta) {
+                        let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
+                        // Drop `_k` and `_v`.
+                        let (_k, _v) = unsafe { val.assume_init() };
+                    }
                 }
             }
         }
@@ -108,15 +111,13 @@ where
 
             // First, check full buckets.
             let candidates = probe.get_candidates(h2);
-            if candidates.any() {
-                for i in 0..GROUP_SIZE {
-                    if candidates.test(i) {
-                        let index = usize::rem_euclid(current + i, self.n_buckets());
-                        // SAFETY: we checked the invariant that `meta.is_value()`.
-                        let (kk, _) = unsafe { self.storage[index].assume_init_ref() };
-                        if kk == k {
-                            return ProbeResult::Full(index);
-                        }
+            for i in 0..GROUP_SIZE {
+                if candidates.test(i) {
+                    let index = usize::rem_euclid(current + i, self.n_buckets());
+                    // SAFETY: we checked the invariant that `meta.is_value()`.
+                    let (kk, _) = unsafe { self.storage[index].assume_init_ref() };
+                    if kk == k {
+                        return ProbeResult::Full(index);
                     }
                 }
             }
@@ -124,12 +125,10 @@ where
             // If we've made it to here, our key isn't in this group.
             // Look for the first empty bucket.
             let empties = probe.get_empty();
-            if empties.any() {
-                for i in 0..GROUP_SIZE {
-                    if empties.test(i) {
-                        let index = usize::rem_euclid(current + i, self.n_buckets());
-                        return ProbeResult::Empty(index, h2);
-                    }
+            for i in 0..GROUP_SIZE {
+                if empties.test(i) {
+                    let index = usize::rem_euclid(current + i, self.n_buckets());
+                    return ProbeResult::Empty(index, h2);
                 }
             }
 
