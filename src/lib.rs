@@ -1,12 +1,20 @@
-#![feature(new_uninit, allocator_api, slice_ptr_get, nonnull_slice_from_raw_parts)]
+#![feature(
+    new_uninit,
+    allocator_api,
+    slice_ptr_get,
+    nonnull_slice_from_raw_parts,
+    portable_simd
+)]
 
 use core::hash::{BuildHasher, Hasher};
 use std::collections::hash_map::DefaultHasher;
 
-pub mod fifth;
+#[rustfmt::skip]
 pub mod first;
+pub mod fifth;
 pub mod fourth;
 pub mod second;
+pub mod sixth;
 pub mod third;
 
 /// Hash builder for std's default hasher.
@@ -32,7 +40,7 @@ fn fix_capacity(capacity: usize) -> usize {
     }
 }
 
-pub use fifth::Map as CbHashMap;
+pub use sixth::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]
