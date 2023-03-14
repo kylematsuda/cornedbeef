@@ -27,13 +27,8 @@ pub fn is_empty(m: Metadata) -> bool {
 }
 
 #[inline]
-pub fn is_tombstone(m: Metadata) -> bool {
-    m == TOMBSTONE
-}
-
-#[inline]
 pub fn is_value(m: Metadata) -> bool {
-    (m & 0x80) == 0 
+    (m & 0x80) == 0
 }
 
 #[inline]

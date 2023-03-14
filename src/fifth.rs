@@ -4,8 +4,9 @@
 use core::hash::{BuildHasher, Hash};
 use std::mem::MaybeUninit;
 
-use crate::{fix_capacity, make_hash, DefaultHashBuilder};
 use crate::metadata::{self, Metadata};
+use crate::sse::{self, GROUP_SIZE};
+use crate::{fix_capacity, make_hash, DefaultHashBuilder};
 
 pub enum ProbeResult {
     Empty(usize, u8),
@@ -20,6 +21,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     /// Safety: we maintain the following invariant:
     /// `self.storage[i]` is initialized whenever `self.metadata[i].is_value()`.
     storage: Box<[MaybeUninit<(K, V)>]>,
+    /// Contains an extra `GROUP_SIZE` elements to avoid wrapping SIMD access
     metadata: Box<[Metadata]>,
 }
 
@@ -33,10 +35,14 @@ impl<K, V> Map<K, V> {
 
         let storage = Box::new_uninit_slice(capacity);
 
-        let metadata = (0..capacity)
-            .map(|_| metadata::empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let metadata = if capacity == 0 {
+            Box::new([])
+        } else {
+            (0..(capacity + GROUP_SIZE))
+                .map(|_| metadata::empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        };
 
         Self {
             hasher: DefaultHashBuilder::default(),
@@ -64,25 +70,54 @@ where
         let mut step = 1;
 
         loop {
-            let meta = self.metadata[current];
+            let meta = &self.metadata[current..(current + GROUP_SIZE)];
+            let probe = sse::Group::new(meta.try_into().unwrap());
 
-            if metadata::is_empty(meta) {
-                return ProbeResult::Empty(current, h2);
-            } else if metadata::is_value(meta) && metadata::h2(meta) == h2 {
-                // SAFETY: we checked the invariant that `meta.is_value()`.
-                let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
-                if kk == k {
-                    return ProbeResult::Full(current);
+            // First, check full buckets.
+            let candidates = probe.get_candidates(h2);
+            if candidates.any() {
+                for i in 0..GROUP_SIZE {
+                    if candidates.test(i) {
+                        let index = usize::rem_euclid(current + i, self.n_buckets());
+                        // SAFETY: we checked the invariant that `meta.is_value()`.
+                        let (kk, _) = unsafe { self.storage[index].assume_init_ref() };
+                        if kk == k {
+                            return ProbeResult::Full(index);
+                        }
+                    }
                 }
             }
 
-            current = usize::rem_euclid(current + step, self.n_buckets());
+            // If we've made it to here, our key isn't in this group.
+            // Look for the first empty bucket.
+            let empties = probe.get_empty();
+            if empties.any() {
+                for i in 0..GROUP_SIZE {
+                    if empties.test(i) {
+                        let index = usize::rem_euclid(current + i, self.n_buckets());
+                        return ProbeResult::Empty(index, h2);
+                    }
+                }
+            }
+
+            // If we've made it to here, all buckets in the group are full or tombstones,
+            // and we haven't found our key.
+            //
+            // Probe to the next group.
+            current = usize::rem_euclid(current + step * GROUP_SIZE, self.n_buckets());
             step += 1;
 
             // We've seen every element in `storage`!
             if current == initial_index {
                 return ProbeResult::End;
             }
+        }
+    }
+
+    fn set_metadata(&mut self, index: usize, value: Metadata) {
+        self.metadata[index] = value;
+        if index < GROUP_SIZE {
+            self.metadata[index + self.n_buckets()] = value;
         }
     }
 
@@ -118,7 +153,7 @@ where
     fn _insert(&mut self, k: K, v: V) -> Option<V> {
         match self.probe_find(&k) {
             ProbeResult::Empty(index, h2) => {
-                self.metadata[index] = metadata::from_h2(h2);
+                self.set_metadata(index, metadata::from_h2(h2));
                 self.storage[index].write((k, v));
                 self.n_items += 1;
                 self.n_occupied += 1;
@@ -142,10 +177,43 @@ where
                 let old_bucket = std::mem::replace(&mut self.storage[index], MaybeUninit::uninit());
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, vv) = unsafe { old_bucket.assume_init() };
-                self.metadata[index] = metadata::tombstone();
+
+                let metadata_value = self.decide_tombstone_or_empty(index);
+                self.set_metadata(index, metadata_value);
+
                 self.n_items -= 1;
+                if metadata::is_empty(metadata_value) {
+                    self.n_occupied -= 1;
+                }
+
                 Some(vv)
             }
+        }
+    }
+
+    /// We can set back to empty unless we're in the middle of a bunch of tombstone or full.
+    fn decide_tombstone_or_empty(&self, index: usize) -> Metadata {
+        // Pathological case where n_buckets is GROUP_SIZE
+        if self.n_buckets() == GROUP_SIZE {
+            return metadata::empty();
+        }
+
+        let probe_current =
+            sse::Group::new(&self.metadata[index..(index + GROUP_SIZE)]).get_empty();
+        let next_empty = sse::find_first(&probe_current);
+
+        let previous = usize::rem_euclid(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
+        let probe_previous =
+            sse::Group::new(&self.metadata[previous..(previous + GROUP_SIZE)]).get_empty();
+        let last_empty = sse::find_last(&probe_previous);
+
+        match (last_empty, next_empty) {
+            (Some(i), Some(j))
+                if j + GROUP_SIZE - usize::rem_euclid(i, self.n_buckets()) < GROUP_SIZE =>
+            {
+                metadata::empty()
+            }
+            _ => metadata::tombstone(),
         }
     }
 
@@ -187,7 +255,7 @@ where
         let new_storage = Box::new_uninit_slice(capacity);
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
-        let new_metadata = (0..capacity)
+        let new_metadata = (0..(capacity + GROUP_SIZE))
             .map(|_| metadata::empty())
             .collect::<Vec<_>>()
             .into_boxed_slice();
