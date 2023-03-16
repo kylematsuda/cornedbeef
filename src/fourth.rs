@@ -100,6 +100,33 @@ impl<K, V> Default for Map<K, V> {
     }
 }
 
+impl<K, V> Clone for Map<K, V> 
+where
+    K: Clone + PartialEq + Eq + Hash,
+    V: Clone,
+{
+    /// No idea if this is right, but need to be able to clone to do benchmarks.
+    fn clone(&self) -> Self {
+        let mut other = Self { 
+            hasher: DefaultHashBuilder::default(),
+            n_items: self.n_items,
+            n_occupied: self.n_occupied,
+            storage: Box::new_uninit_slice(self.n_buckets()),
+            metadata: self.metadata.clone(),
+            _ph: PhantomData,
+        };
+
+        for (i, m) in self.metadata.iter().enumerate() {
+            if m.is_value() {
+                let (k, v) = unsafe { self.storage[i].assume_init_ref() };
+                other.storage[i].write((k.clone(), v.clone()));
+            }
+        }
+
+        other
+    }
+}
+
 impl<K, V, S> Drop for Map<K, V, S>
 where
     S: BuildHasher,
