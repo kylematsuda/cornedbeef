@@ -57,9 +57,7 @@ impl<K, V> Map<K, V> {
     pub fn with_capacity(capacity: usize) -> Self {
         let capacity = fix_capacity(capacity);
 
-        let storage = (0..capacity)
-            .map(|_| Bucket::Empty)
-            .collect();
+        let storage = (0..capacity).map(|_| Bucket::Empty).collect();
 
         Self {
             hasher: DefaultHashBuilder::default(),
@@ -192,9 +190,7 @@ where
         };
 
         // Set `self.storage` to a new array.
-        let new_storage = (0..capacity)
-            .map(|_| Bucket::Empty)
-            .collect();
+        let new_storage = (0..capacity).map(|_| Bucket::Empty).collect();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
         self.n_items = 0;

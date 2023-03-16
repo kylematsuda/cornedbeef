@@ -39,11 +39,11 @@ fn fix_capacity(capacity: usize) -> usize {
     match capacity {
         0 => 0,
         x if x < 16 => 16,
-        x => x.next_power_of_two()
+        x => x.next_power_of_two(),
     }
 }
 
-pub use fourth::Map as CbHashMap;
+pub use first::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]

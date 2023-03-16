@@ -70,13 +70,9 @@ impl<K, V> Map<K, V> {
     pub fn with_capacity(capacity: usize) -> Self {
         let capacity = fix_capacity(capacity);
 
-        let storage = (0..capacity)
-            .map(|_| None)
-            .collect();
+        let storage = (0..capacity).map(|_| None).collect();
 
-        let metadata = (0..capacity)
-            .map(|_| Metadata::empty())
-            .collect();
+        let metadata = (0..capacity).map(|_| Metadata::empty()).collect();
 
         Self {
             hasher: DefaultHashBuilder::default(),
@@ -214,15 +210,11 @@ where
         };
 
         // Set `self.storage` to a new array.
-        let new_storage = (0..capacity)
-            .map(|_| None)
-            .collect();
+        let new_storage = (0..capacity).map(|_| None).collect();
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
 
         // We can throw away the old metadata, we need to recompute it anyway.
-        self.metadata = (0..capacity)
-            .map(|_| Metadata::empty())
-            .collect();
+        self.metadata = (0..capacity).map(|_| Metadata::empty()).collect();
 
         self.n_items = 0;
         self.n_occupied = 0;

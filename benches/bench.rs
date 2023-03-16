@@ -1,5 +1,5 @@
 use cornedbeef::CbHashMap;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use std::collections::HashMap as StdHashMap;
 
 static SIZE: usize = 100_000;
@@ -38,23 +38,54 @@ macro_rules! bench_new {
 
 pub fn new(c: &mut Criterion) {
     let mut group = c.benchmark_group("new");
-    for size in [0, 10000] {
+    for size in [0, 100_000] {
         group.bench_function(BenchmarkId::new("std", size), bench_new!(StdHashMap, size));
         group.bench_function(BenchmarkId::new("cb", size), bench_new!(CbHashMap, size));
     }
     group.finish();
 }
 
-macro_rules! bench_grow {
-    ($map:ident, $it:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::new();
-            b.iter(|| {
-                for i in $it {
-                    black_box(map.insert(i, [i; $len]));
-                }
-            })
+macro_rules! bench_drop {
+    ($group:expr, $map:ident, $label:expr, $size:expr) => {
+        let mut map = $map::new();
+
+        for i in 0..$size {
+            map.insert(i, i.to_string()); 
         }
+
+        $group.bench_function(BenchmarkId::new($label, $size), |b| {
+            b.iter_batched(
+                || map.clone(),
+                |map| {
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
+        });
+    };
+}
+
+pub fn drop(c: &mut Criterion) {
+    let mut group = c.benchmark_group("drop");
+    bench_drop!(group, StdHashMap, "std", SIZE);
+    bench_drop!(group, CbHashMap, "cb", SIZE);
+    group.finish();
+}
+
+macro_rules! bench_grow {
+    ($group:expr, $map:ident, $label:expr, $it:expr, $len:expr) => {
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter_batched_ref(
+                || $map::new(),
+                |map| {
+                    for i in $it {
+                        black_box(map.insert(i, [i; $len]));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
+        });
     };
 }
 
@@ -63,26 +94,14 @@ pub fn insert_grow_seq(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_grow!(StdHashMap, 0..SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_grow!(CbHashMap, 0..SIZE, LEN),
-        );
+        bench_grow!(group, StdHashMap, "std", 0..SIZE, LEN);
+        bench_grow!(group, CbHashMap, "cb", 0..SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_grow!(StdHashMap, 0..SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_grow!(CbHashMap, 0..SIZE, LEN),
-        );
+        bench_grow!(group, StdHashMap, "std", 0..SIZE, LEN);
+        bench_grow!(group, CbHashMap, "cb", 0..SIZE, LEN);
     }
     group.finish();
 }
@@ -93,40 +112,32 @@ pub fn insert_grow_random(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_grow!(StdHashMap, seq.take(SIZE), LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_grow!(CbHashMap, seq.take(SIZE), LEN),
-        );
+        bench_grow!(group, StdHashMap, "std", seq.take(SIZE), LEN);
+        bench_grow!(group, CbHashMap, "cb", seq.take(SIZE), LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_grow!(StdHashMap, seq.take(SIZE), LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_grow!(CbHashMap, seq.take(SIZE), LEN),
-        );
+        bench_grow!(group, StdHashMap, "std", seq.take(SIZE), LEN);
+        bench_grow!(group, CbHashMap, "cb", seq.take(SIZE), LEN);
     }
     group.finish();
 }
 
 macro_rules! bench_reserved {
-    ($map:ident, $it:expr, $size:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::with_capacity($size);
-            b.iter(|| {
-                for i in $it {
-                    black_box(map.insert(i, [i; $len]));
-                }
-            })
-        }
+    ($group:expr, $map:ident, $label:expr, $it:expr, $size:expr, $len:expr) => {
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter_batched_ref(
+                || $map::with_capacity($size),
+                |map| {
+                    for i in $it {
+                        black_box(map.insert(i, [i; $len]));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
+        });
     };
 }
 
@@ -136,45 +147,35 @@ pub fn insert_reserved_random(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_reserved!(CbHashMap, seq.take(SIZE), SIZE, LEN),
-        );
+        bench_reserved!(group, StdHashMap, "std", seq.take(SIZE), SIZE, LEN);
+        bench_reserved!(group, CbHashMap, "cb", seq.take(SIZE), SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_reserved!(StdHashMap, seq.take(SIZE), SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_reserved!(CbHashMap, seq.take(SIZE), SIZE, LEN),
-        );
+        bench_reserved!(group, StdHashMap, "std", seq.take(SIZE), SIZE, LEN);
+        bench_reserved!(group, CbHashMap, "cb", seq.take(SIZE), SIZE, LEN);
     }
     group.finish();
 }
 
 macro_rules! bench_lookup {
-    ($map:ident, $size:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::new();
-            let seq = RandomKeys::new();
+    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
+        let mut map = $map::new();
+        let seq = RandomKeys::new();
 
-            for i in seq.take($size) {
-                map.insert(i, [i; $len]);
-            }
+        for i in seq.take($size) {
+            map.insert(i, [i; $len]);
+        }
+
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
             b.iter(|| {
                 for i in seq.take($size) {
                     black_box(map.get(&i));
                 }
+                black_box(&mut map);
             })
-        }
+        });
     };
 }
 
@@ -183,46 +184,38 @@ pub fn lookup(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_lookup!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_lookup!(CbHashMap, SIZE, LEN),
-        );
+        bench_lookup!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_lookup!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_lookup!(CbHashMap, SIZE, LEN),
-        );
+        bench_lookup!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     group.finish();
 }
 
 macro_rules! bench_lookup_miss {
-    ($map:ident, $size:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::new();
-            let mut seq = RandomKeys::new();
+    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
+        let mut map = $map::new();
+        let mut seq = RandomKeys::new();
 
-            for i in (&mut seq).take($size) {
-                map.insert(i, [i; $len]);
-            }
-            b.iter(|| {
-                for i in (&mut seq).take($size) {
-                    black_box(map.get(&i));
-                }
-            })
+        for i in (&mut seq).take($size) {
+            map.insert(i, [i; $len]);
         }
+
+        let misses: Vec<_> = (&mut seq).take($size).collect();
+
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter(|| {
+                for i in &misses {
+                    black_box(map.get(i));
+                }
+                black_box(&mut map);
+            })
+        });
     };
 }
 
@@ -231,46 +224,40 @@ pub fn lookup_miss(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_lookup_miss!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_lookup_miss!(CbHashMap, SIZE, LEN),
-        );
+        bench_lookup_miss!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup_miss!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_lookup_miss!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_lookup_miss!(CbHashMap, SIZE, LEN),
-        );
+        bench_lookup_miss!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup_miss!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     group.finish();
 }
 
 macro_rules! bench_remove {
-    ($map:ident, $size:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::new();
-            let seq = RandomKeys::new();
+    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
+        let mut map = $map::new();
+        let seq = RandomKeys::new();
 
-            for i in seq.take($size) {
-                map.insert(i, [i; $len]);
-            }
-            b.iter(|| {
-                for i in seq.take($size) {
-                    black_box(map.remove(&i));
-                }
-            })
+        for i in seq.take($size) {
+            map.insert(i, [i; $len]);
         }
+
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter_batched_ref(
+                || map.clone(),
+                |map| {
+                    for i in seq.take($size) {
+                        black_box(map.remove(&i));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
+        });
     };
 }
 
@@ -279,46 +266,42 @@ pub fn remove(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_remove!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_remove!(CbHashMap, SIZE, LEN),
-        );
+        bench_remove!(group, StdHashMap, "std", SIZE, LEN);
+        bench_remove!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_remove!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_remove!(CbHashMap, SIZE, LEN),
-        );
+        bench_remove!(group, StdHashMap, "std", SIZE, LEN);
+        bench_remove!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     group.finish();
 }
 
 macro_rules! bench_remove_miss {
-    ($map:ident, $size:expr, $len:expr) => {
-        |b| {
-            let mut map = $map::new();
-            let mut seq = RandomKeys::new();
+    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
+        let mut map = $map::new();
+        let mut seq = RandomKeys::new();
 
-            for i in (&mut seq).take($size) {
-                map.insert(i, [i; $len]);
-            }
-            b.iter(|| {
-                for i in (&mut seq).take($size) {
-                    black_box(map.remove(&i));
-                }
-            })
+        for i in (&mut seq).take($size) {
+            map.insert(i, [i; $len]);
         }
+
+        let misses: Vec<_> = (&mut seq).take($size).collect();
+
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter_batched_ref(
+                || map.clone(),
+                |map| {
+                    for i in &misses {
+                        black_box(map.remove(i));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
+        });
     };
 }
 
@@ -327,26 +310,14 @@ pub fn remove_miss(c: &mut Criterion) {
 
     {
         const LEN: usize = 1;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_remove_miss!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_remove_miss!(CbHashMap, SIZE, LEN),
-        );
+        bench_remove_miss!(group, StdHashMap, "std", SIZE, LEN);
+        bench_remove_miss!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     {
         const LEN: usize = 8;
-        group.bench_function(
-            BenchmarkId::new("std", LEN),
-            bench_remove_miss!(StdHashMap, SIZE, LEN),
-        );
-        group.bench_function(
-            BenchmarkId::new("cb", LEN),
-            bench_remove_miss!(CbHashMap, SIZE, LEN),
-        );
+        bench_remove_miss!(group, StdHashMap, "std", SIZE, LEN);
+        bench_remove_miss!(group, CbHashMap, "cb", SIZE, LEN);
     }
 
     group.finish();
@@ -355,6 +326,7 @@ pub fn remove_miss(c: &mut Criterion) {
 criterion_group!(
     benches,
     new,
+    drop,
     insert_grow_seq,
     insert_grow_random,
     insert_reserved_random,

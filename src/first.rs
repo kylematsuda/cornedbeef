@@ -5,6 +5,7 @@ use std::collections::LinkedList;
 
 use crate::{fix_capacity, make_hash, DefaultHashBuilder};
 
+#[derive(Debug, Clone)]
 pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     hasher: S,
     n_items: usize,
@@ -120,7 +121,8 @@ where
 
     fn bucket_index(&self, k: &K) -> usize {
         let hash = make_hash(&self.hasher, k);
-        usize::rem_euclid(hash as usize, self.n_buckets())
+        (hash as usize) & (self.n_buckets() - 1)
+        // usize::rem_euclid(hash as usize, self.n_buckets())
     }
 
     fn needs_resize(&self) -> bool {
