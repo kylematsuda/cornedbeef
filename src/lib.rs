@@ -43,7 +43,7 @@ fn fix_capacity(capacity: usize) -> usize {
     }
 }
 
-pub use first::Map as CbHashMap;
+pub use second::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]
@@ -53,6 +53,11 @@ macro_rules! generate_tests {
         fn empty_map_doesnt_allocate() {
             let map = $map::<usize, usize>::new();
             assert_eq!(0, std::mem::size_of_val(&*map.storage));
+        }
+
+        #[test]
+        fn drop_empty_map() {
+            let _ = $map::<String, String>::new();
         }
 
         #[test]
@@ -68,6 +73,30 @@ macro_rules! generate_tests {
             for i in 0..1000 {
                 assert_eq!(map.get(&i), Some(&i));
             }
+        }
+
+        #[test]
+        fn insert_nontrivial_drop() {
+            let mut map = $map::new();
+            let items = (0..1000).map(|i| (i.to_string(), i.to_string()));
+
+            for (k, v) in items {
+                map.insert(k, v);
+            }
+            assert_eq!(map.len(), 1000);
+        }
+
+        #[test]
+        fn insert_borrowed_data() {
+            let items = (0..1000)
+                .map(|i| (i.to_string(), i.to_string()))
+                .collect::<Vec<_>>();
+            let mut map = $map::new();
+
+            for (k, v) in &items {
+                map.insert(k, v);
+            }
+            assert_eq!(map.len(), 1000);
         }
 
         #[test]
@@ -128,17 +157,6 @@ macro_rules! generate_tests {
 
             let buckets = if $should_resize { buckets * 2 } else { buckets };
             assert_eq!(buckets, map.n_buckets());
-        }
-
-        #[test]
-        fn insert_nontrivial_drop() {
-            let mut map = $map::new();
-            let items = (0..1000).map(|i| (i.to_string(), i.to_string()));
-
-            for (k, v) in items {
-                map.insert(k, v);
-            }
-            assert_eq!(map.len(), 1000);
         }
     };
 }

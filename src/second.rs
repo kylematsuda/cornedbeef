@@ -4,6 +4,7 @@ use core::hash::{BuildHasher, Hash};
 
 use crate::{fix_capacity, make_hash, DefaultHashBuilder};
 
+#[derive(Debug, Clone)]
 pub enum Bucket<K, V> {
     Empty,
     Tombstone,
@@ -42,6 +43,7 @@ pub enum ProbeResult {
     End,
 }
 
+#[derive(Debug, Clone)]
 pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     hasher: S,
     n_items: usize,    // Number of live items
@@ -109,7 +111,7 @@ where
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
 
-            current = usize::rem_euclid(current + step, self.n_buckets());
+            current = (current + step) & (self.n_buckets() - 1);
             step += 1;
 
             // We've seen every element in `storage`!
@@ -173,7 +175,7 @@ where
 
     fn bucket_index(&self, k: &K) -> usize {
         let hash = make_hash(&self.hasher, k);
-        usize::rem_euclid(hash as usize, self.n_buckets())
+        (hash as usize) & (self.n_buckets() - 1)
     }
 
     fn needs_resize(&self) -> bool {

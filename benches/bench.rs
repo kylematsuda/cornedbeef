@@ -38,7 +38,7 @@ macro_rules! bench_new {
 
 pub fn new(c: &mut Criterion) {
     let mut group = c.benchmark_group("new");
-    for size in [0, 100_000] {
+    for size in [0, SIZE] {
         group.bench_function(BenchmarkId::new("std", size), bench_new!(StdHashMap, size));
         group.bench_function(BenchmarkId::new("cb", size), bench_new!(CbHashMap, size));
     }
@@ -240,9 +240,9 @@ pub fn lookup_miss(c: &mut Criterion) {
 macro_rules! bench_remove {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
         let mut map = $map::new();
-        let seq = RandomKeys::new();
+        let seq: Vec<_> = RandomKeys::new().take($size).collect();
 
-        for i in seq.take($size) {
+        for i in &seq {
             map.insert(i, [i; $len]);
         }
 
@@ -250,9 +250,10 @@ macro_rules! bench_remove {
             b.iter_batched_ref(
                 || map.clone(),
                 |map| {
-                    for i in seq.take($size) {
+                    for i in &seq {
                         black_box(map.remove(&i));
                     }
+                    assert!(map.len() == 0);
                     black_box(map);
                 },
                 BatchSize::PerIteration,

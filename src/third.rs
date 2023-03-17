@@ -127,7 +127,7 @@ where
                 }
             }
 
-            current = usize::rem_euclid(current + step, self.n_buckets());
+            current = (current + step) & (self.n_buckets() - 1);
             step += 1;
 
             // We've seen every element in `storage`!
@@ -192,7 +192,7 @@ where
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
         let hash = make_hash(&self.hasher, k);
         let (h1, h2) = (hash >> 7, (hash & 0x7F) as u8);
-        let index = usize::rem_euclid(h1 as usize, self.n_buckets());
+        let index = (h1 as usize) & (self.n_buckets() - 1);
         (index, h2)
     }
 
