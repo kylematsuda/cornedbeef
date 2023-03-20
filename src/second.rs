@@ -2,7 +2,7 @@
 
 use core::hash::{BuildHasher, Hash};
 
-use crate::{fix_capacity, make_hash, DefaultHashBuilder};
+use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 
 #[derive(Debug, Clone)]
 pub enum Bucket<K, V> {
@@ -110,8 +110,8 @@ where
                 // Keep probing.
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
-
-            current = (current + step) & (self.n_buckets() - 1);
+            
+            current = fast_rem(current + step, self.n_buckets());
             step += 1;
 
             // We've seen every element in `storage`!
@@ -175,7 +175,7 @@ where
 
     fn bucket_index(&self, k: &K) -> usize {
         let hash = make_hash(&self.hasher, k);
-        (hash as usize) & (self.n_buckets() - 1)
+        fast_rem(hash as usize, self.n_buckets())
     }
 
     fn needs_resize(&self) -> bool {

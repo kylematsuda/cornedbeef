@@ -2,7 +2,7 @@
 
 use core::hash::{BuildHasher, Hash};
 
-use crate::{fix_capacity, make_hash, DefaultHashBuilder};
+use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 
 use crate::metadata::{self, Metadata};
 
@@ -86,7 +86,7 @@ where
                 }
             }
 
-            current = (current + step) & (self.n_buckets() - 1);
+            current = fast_rem(current + step, self.n_buckets());
             step += 1;
 
             // We've seen every element in `storage`!
@@ -151,7 +151,7 @@ where
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
         let hash = make_hash(&self.hasher, k);
         let (h1, h2) = (hash >> 7, (hash & 0x7F) as u8);
-        let index = (h1 as usize) & (self.n_buckets() - 1);
+        let index = fast_rem(h1 as usize, self.n_buckets());
         (index, h2)
     }
 

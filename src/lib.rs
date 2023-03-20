@@ -43,7 +43,12 @@ fn fix_capacity(capacity: usize) -> usize {
     }
 }
 
-pub use fifth::Map as CbHashMap;
+#[inline(always)]
+fn fast_rem(n: usize, modulus_power_of_two: usize) -> usize {
+    n & (modulus_power_of_two - 1)
+}
+
+pub use third::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]

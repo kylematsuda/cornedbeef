@@ -7,7 +7,7 @@ use std::mem::MaybeUninit;
 
 use crate::metadata::{self, Metadata};
 use crate::sse::{self, GROUP_SIZE};
-use crate::{fix_capacity, make_hash, DefaultHashBuilder};
+use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 
 pub enum ProbeResult {
     Empty(usize, u8),
@@ -160,7 +160,7 @@ where
             // and we haven't found our key.
             //
             // Probe to the next group.
-            current = (current + step * GROUP_SIZE) & (self.n_buckets() - 1);
+            current = fast_rem(current + step * GROUP_SIZE, self.n_buckets());
             step += 1;
 
             // We've seen every element in `storage`!
@@ -258,13 +258,13 @@ where
         let probe_current = sse::Group::new(&self.metadata, index).get_empty();
         let next_empty = sse::find_first(&probe_current);
 
-        let previous = usize::rem_euclid(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
+        let previous = fast_rem(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
         let probe_previous = sse::Group::new(&self.metadata, previous).get_empty();
         let last_empty = sse::find_last(&probe_previous);
 
         match (last_empty, next_empty) {
             (Some(i), Some(j))
-                if j + GROUP_SIZE - usize::rem_euclid(i, self.n_buckets()) < GROUP_SIZE =>
+                if j + GROUP_SIZE - fast_rem(i, self.n_buckets()) < GROUP_SIZE =>
             {
                 metadata::empty()
             }
@@ -275,7 +275,7 @@ where
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
         let hash = make_hash(&self.hasher, k);
         let (h1, h2) = (hash >> 7, (hash & 0x7F) as u8);
-        let index = (h1 as usize) & (self.n_buckets() - 1);
+        let index = fast_rem(h1 as usize, self.n_buckets());
         (index, h2)
     }
 

@@ -3,7 +3,7 @@
 use core::hash::{BuildHasher, Hash};
 use std::collections::LinkedList;
 
-use crate::{fix_capacity, make_hash, DefaultHashBuilder};
+use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 
 #[derive(Debug, Clone)]
 pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
@@ -121,7 +121,7 @@ where
 
     fn bucket_index(&self, k: &K) -> usize {
         let hash = make_hash(&self.hasher, k);
-        (hash as usize) & (self.n_buckets() - 1)
+        fast_rem(hash as usize, self.n_buckets())
         // usize::rem_euclid(hash as usize, self.n_buckets())
     }
 
