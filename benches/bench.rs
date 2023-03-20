@@ -197,6 +197,45 @@ pub fn lookup(c: &mut Criterion) {
     group.finish();
 }
 
+macro_rules! bench_lookup_string {
+    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
+        let mut map = $map::new();
+        let seq = RandomKeys::new();
+        let keys = seq.take($size).map(|i| i.to_string()).collect::<Vec<_>>();
+
+        for i in &keys {
+            map.insert(i.clone(), i.clone());
+        }
+
+        $group.bench_function(BenchmarkId::new($label, $len), |b| {
+            b.iter(|| {
+                for i in &keys {
+                    black_box(map.get(i));
+                }
+                black_box(&mut map);
+            })
+        });
+    };
+}
+
+pub fn lookup_string(c: &mut Criterion) {
+    let mut group = c.benchmark_group("lookup_string");
+
+    {
+        const LEN: usize = 1;
+        bench_lookup_string!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup_string!(group, CbHashMap, "cb", SIZE, LEN);
+    }
+
+    {
+        const LEN: usize = 8;
+        bench_lookup_string!(group, StdHashMap, "std", SIZE, LEN);
+        bench_lookup_string!(group, CbHashMap, "cb", SIZE, LEN);
+    }
+
+    group.finish();
+}
+
 macro_rules! bench_lookup_miss {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
         let mut map = $map::new();
