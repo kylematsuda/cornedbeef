@@ -141,7 +141,7 @@ macro_rules! bench_reserved {
     };
 }
 
-pub fn insert_reserved_random(c: &mut Criterion) {
+pub fn insert_reserved(c: &mut Criterion) {
     let mut group = c.benchmark_group("insert_reserved_random");
     let seq = RandomKeys::new();
 
@@ -204,7 +204,7 @@ macro_rules! bench_lookup_string {
         let keys = seq.take($size).map(|i| i.to_string()).collect::<Vec<_>>();
 
         for i in &keys {
-            map.insert(i.clone(), i.clone());
+            map.insert(i.clone(), [i.len(); $len]);
         }
 
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
@@ -319,60 +319,16 @@ pub fn remove(c: &mut Criterion) {
     group.finish();
 }
 
-macro_rules! bench_remove_miss {
-    ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
-        let mut map = $map::new();
-        let mut seq = RandomKeys::new();
-
-        for i in (&mut seq).take($size) {
-            map.insert(i, [i; $len]);
-        }
-
-        let misses: Vec<_> = (&mut seq).take($size).collect();
-
-        $group.bench_function(BenchmarkId::new($label, $len), |b| {
-            b.iter_batched_ref(
-                || map.clone(),
-                |map| {
-                    for i in &misses {
-                        black_box(map.remove(i));
-                    }
-                    black_box(map);
-                },
-                BatchSize::PerIteration,
-            )
-        });
-    };
-}
-
-pub fn remove_miss(c: &mut Criterion) {
-    let mut group = c.benchmark_group("remove_miss");
-
-    {
-        const LEN: usize = 1;
-        bench_remove_miss!(group, StdHashMap, "std", SIZE, LEN);
-        bench_remove_miss!(group, CbHashMap, "cb", SIZE, LEN);
-    }
-
-    {
-        const LEN: usize = 8;
-        bench_remove_miss!(group, StdHashMap, "std", SIZE, LEN);
-        bench_remove_miss!(group, CbHashMap, "cb", SIZE, LEN);
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
     new,
     drop,
     insert_grow_seq,
     insert_grow_random,
-    insert_reserved_random,
+    insert_reserved,
     lookup,
+    lookup_string,
     lookup_miss,
     remove,
-    remove_miss,
 );
 criterion_main!(benches);
