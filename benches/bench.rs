@@ -50,7 +50,7 @@ macro_rules! bench_drop {
         let mut map = $map::new();
 
         for i in 0..$size {
-            map.insert(i, i.to_string()); 
+            map.insert(i, i.to_string());
         }
 
         $group.bench_function(BenchmarkId::new($label, $size), |b| {
@@ -278,8 +278,8 @@ pub fn lookup_miss(c: &mut Criterion) {
 
 macro_rules! bench_remove {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
-        let mut map = $map::new();
         let seq: Vec<_> = RandomKeys::new().take($size).collect();
+        let mut map = $map::new();
 
         for i in &seq {
             map.insert(i, [i; $len]);

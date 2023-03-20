@@ -80,6 +80,33 @@ impl<K, V, S: BuildHasher> Drop for Map<K, V, S> {
     }
 }
 
+impl<K, V> Clone for Map<K, V>
+where
+    K: Clone + PartialEq + Eq + Hash,
+    V: Clone,
+{
+    /// No idea if this is right, but need to be able to clone to do benchmarks.
+    fn clone(&self) -> Self {
+        let mut other = Self {
+            hasher: DefaultHashBuilder::default(),
+            n_items: self.n_items,
+            n_occupied: self.n_occupied,
+            storage: Box::new_uninit_slice(self.n_buckets()),
+            metadata: self.metadata.clone(),
+            _ph: PhantomData,
+        };
+
+        for (i, m) in self.metadata.iter().enumerate().take(self.storage.len()) {
+            if metadata::is_value(*m) {
+                let (k, v) = unsafe { self.storage[i].assume_init_ref() };
+                other.storage[i].write((k.clone(), v.clone()));
+            }
+        }
+
+        other
+    }
+}
+
 impl<K, V, S: BuildHasher> Map<K, V, S> {
     pub fn len(&self) -> usize {
         self.n_items
@@ -112,7 +139,7 @@ where
             let candidates = probe.get_candidates(h2);
             for i in 0..GROUP_SIZE {
                 if unsafe { candidates.test_unchecked(i) } {
-                    let index = usize::rem_euclid(current + i, self.n_buckets());
+                    let index = (current + i) & (self.n_buckets() - 1);
                     // SAFETY: we checked the invariant that `meta.is_value()`.
                     let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
                     if kk == k {
@@ -123,19 +150,17 @@ where
 
             // If we've made it to here, our key isn't in this group.
             // Look for the first empty bucket.
-            let empties = probe.get_empty();
-            for i in 0..GROUP_SIZE {
-                if unsafe { empties.test_unchecked(i) } {
-                    let index = usize::rem_euclid(current + i, self.n_buckets());
-                    return ProbeResult::Empty(index, h2);
-                }
+            let empty = sse::find_first(&probe.get_empty());
+            if let Some(i) = empty {
+                let index = (current + i) & (self.n_buckets() - 1);
+                return ProbeResult::Empty(index, h2);
             }
 
             // If we've made it to here, all buckets in the group are full or tombstones,
             // and we haven't found our key.
             //
             // Probe to the next group.
-            current = usize::rem_euclid(current + step * GROUP_SIZE, self.n_buckets());
+            current = (current + step * GROUP_SIZE) & (self.n_buckets() - 1);
             step += 1;
 
             // We've seen every element in `storage`!
@@ -250,7 +275,7 @@ where
     fn bucket_index_and_h2(&self, k: &K) -> (usize, u8) {
         let hash = make_hash(&self.hasher, k);
         let (h1, h2) = (hash >> 7, (hash & 0x7F) as u8);
-        let index = usize::rem_euclid(h1 as usize, self.n_buckets());
+        let index = (h1 as usize) & (self.n_buckets() - 1);
         (index, h2)
     }
 
