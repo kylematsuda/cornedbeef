@@ -166,4 +166,5 @@ where
 mod tests {
     use crate::first::Map;
     crate::generate_tests!(Map, false);
+    crate::generate_non_alloc_tests!(Map);
 }

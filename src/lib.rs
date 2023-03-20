@@ -50,12 +50,6 @@ pub use second::Map as CbHashMap;
 macro_rules! generate_tests {
     ($map:ident, $should_resize:expr) => {
         #[test]
-        fn empty_map_doesnt_allocate() {
-            let map = $map::<usize, usize>::new();
-            assert_eq!(0, std::mem::size_of_val(&*map.storage));
-        }
-
-        #[test]
         fn drop_empty_map() {
             let _ = $map::<String, String>::new();
         }
@@ -157,6 +151,18 @@ macro_rules! generate_tests {
 
             let buckets = if $should_resize { buckets * 2 } else { buckets };
             assert_eq!(buckets, map.n_buckets());
+        }
+    };
+}
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! generate_non_alloc_tests {
+    ($map:ident) => {
+        #[test]
+        fn empty_map_doesnt_allocate() {
+            let map = $map::<usize, usize>::new();
+            assert_eq!(0, std::mem::size_of_val(&*map.storage));
         }
     };
 }
