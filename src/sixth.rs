@@ -1,5 +1,7 @@
 //! A Swiss Tables-inspired map with metadata.
 //! This uses a ton of unsafe to put the metadata and the storage array in the same allocation.
+//!
+//! Warning: This kinda works, but I still need to add the parallel probing from `fifth`. 
 
 use core::hash::{BuildHasher, Hash};
 use std::alloc::{Allocator, Global, Layout};
