@@ -37,7 +37,7 @@ impl<K, V> Bucket<K, V> {
     }
 }
 
-pub enum ProbeResult {
+enum ProbeResult {
     Empty(usize),
     Full(usize),
 }

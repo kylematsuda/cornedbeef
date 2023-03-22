@@ -9,7 +9,7 @@ use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 
 use crate::metadata::{self, Metadata};
 
-pub enum ProbeResult {
+enum ProbeResult {
     Empty(usize, u8),
     Full(usize),
 }
