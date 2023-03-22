@@ -98,10 +98,10 @@ where
 {
     fn probe_find(&self, k: &K) -> ProbeResult {
         let mut current = self.bucket_index(k);
-        let initial_index = current;
-        let mut step = 1;
 
-        loop {
+        for step in 0..self.n_buckets() {
+            current = fast_rem(current + step, self.n_buckets());
+
             match &self.storage[current] {
                 Bucket::Empty => return ProbeResult::Empty(current),
                 Bucket::Full(kk, _) if kk == k => {
@@ -110,15 +110,9 @@ where
                 // Keep probing.
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
-
-            current = fast_rem(current + step, self.n_buckets());
-            step += 1;
-
-            // We've seen every element in `storage`!
-            if current == initial_index {
-                return ProbeResult::End;
-            }
         }
+        // We've seen every element in `storage`!
+        ProbeResult::End
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {

@@ -71,10 +71,9 @@ where
 {
     fn probe_find(&self, k: &K) -> ProbeResult {
         let (mut current, h2) = self.bucket_index_and_h2(k);
-        let initial_index = current;
-        let mut step = 1;
 
-        loop {
+        for step in 0..self.n_buckets() {
+            current = fast_rem(current + step, self.n_buckets());
             let meta = self.metadata[current];
 
             if metadata::is_empty(meta) {
@@ -85,15 +84,9 @@ where
                     return ProbeResult::Full(current);
                 }
             }
-
-            current = fast_rem(current + step, self.n_buckets());
-            step += 1;
-
-            // We've seen every element in `storage`!
-            if current == initial_index {
-                return ProbeResult::End;
-            }
         }
+        // We've seen every element in `storage`!
+        ProbeResult::End
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
