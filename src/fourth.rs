@@ -122,30 +122,22 @@ where
 {
     fn probe_find(&self, k: &K) -> ProbeResult {
         let (mut current, h2) = self.bucket_index_and_h2(k);
-        let initial_index = current;
-        let mut step = 1;
 
-        loop {
-            let meta = unsafe { self.metadata.get_unchecked(current) };
+        for step in 0..self.n_buckets() {
+            current = fast_rem(current + step, self.n_buckets());
+            let meta = &self.metadata[current];
 
             if metadata::is_empty(*meta) {
                 return ProbeResult::Empty(current, h2);
             } else if metadata::is_full(*meta) && metadata::h2(*meta) == h2 {
                 // SAFETY: we checked the invariant that `meta.is_value()`.
-                let (kk, _) = unsafe { self.storage.get_unchecked(current).assume_init_ref() };
+                let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
                     return ProbeResult::Full(current);
                 }
             }
-
-            current = fast_rem(current + step, self.n_buckets());
-            step += 1;
-
-            // We've seen every element in `storage`!
-            if current == initial_index {
-                return ProbeResult::End;
-            }
         }
+        ProbeResult::End
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
