@@ -9,7 +9,6 @@ use crate::metadata::{self, Metadata};
 pub enum ProbeResult {
     Empty(usize, u8),
     Full(usize),
-    End,
 }
 
 #[derive(Debug, Clone)]
@@ -85,20 +84,19 @@ where
                 }
             }
         }
-        // We've seen every element in `storage`!
-        ProbeResult::End
+        unreachable!("backing storage is full, we didn't resize correctly")
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => self.storage[index].as_ref().map(|(_, v)| v),
         }
     }
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => self.storage[index].as_mut().map(|(_, v)| v),
         }
     }
@@ -123,15 +121,12 @@ where
                 let (_, vv) = self.storage[index].as_mut().unwrap();
                 Some(std::mem::replace(vv, v))
             }
-            ProbeResult::End => {
-                panic!("backing storage is full, we didn't resize correctly")
-            }
         }
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 let old_bucket = self.storage[index].take();
                 self.metadata[index] = metadata::tombstone();

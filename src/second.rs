@@ -40,7 +40,6 @@ impl<K, V> Bucket<K, V> {
 pub enum ProbeResult {
     Empty(usize),
     Full(usize),
-    End,
 }
 
 #[derive(Debug, Clone)]
@@ -111,20 +110,19 @@ where
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
         }
-        // We've seen every element in `storage`!
-        ProbeResult::End
+        unreachable!("backing storage is full, we didn't resize correctly")
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(_) => None,
             ProbeResult::Full(index) => self.storage[index].as_inner().map(|(_, v)| v),
         }
     }
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(_) => None,
             ProbeResult::Full(index) => self.storage[index].as_mut().map(|(_, v)| v),
         }
     }
@@ -148,15 +146,12 @@ where
                 let (_, vv) = self.storage[index].as_mut().unwrap();
                 Some(std::mem::replace(vv, v))
             }
-            ProbeResult::End => {
-                panic!("backing storage is full, we didn't resize correctly")
-            }
         }
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(_) | ProbeResult::End => None,
+            ProbeResult::Empty(_) => None,
             ProbeResult::Full(index) => {
                 let old_bucket = std::mem::replace(&mut self.storage[index], Bucket::Tombstone);
                 // Important to decrement only `n_items` and not `n_occupied` here,

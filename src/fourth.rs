@@ -12,7 +12,6 @@ use crate::metadata::{self, Metadata};
 pub enum ProbeResult {
     Empty(usize, u8),
     Full(usize),
-    End,
 }
 
 pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
@@ -125,11 +124,11 @@ where
 
         for step in 0..self.n_buckets() {
             current = fast_rem(current + step, self.n_buckets());
-            let meta = &self.metadata[current];
+            let meta = self.metadata[current];
 
-            if metadata::is_empty(*meta) {
+            if metadata::is_empty(meta) {
                 return ProbeResult::Empty(current, h2);
-            } else if metadata::is_full(*meta) && metadata::h2(*meta) == h2 {
+            } else if metadata::is_full(meta) && metadata::h2(meta) == h2 {
                 // SAFETY: we checked the invariant that `meta.is_value()`.
                 let (kk, _) = unsafe { self.storage[current].assume_init_ref() };
                 if kk == k {
@@ -137,12 +136,12 @@ where
                 }
             }
         }
-        ProbeResult::End
+        unreachable!("backing storage is full, we didn't resize correctly")
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, v) = unsafe { self.storage[index].assume_init_ref() };
@@ -153,7 +152,7 @@ where
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, v) = unsafe { self.storage[index].assume_init_mut() };
@@ -183,15 +182,12 @@ where
                 let (_, vv) = unsafe { self.storage[index].assume_init_mut() };
                 Some(std::mem::replace(vv, v))
             }
-            ProbeResult::End => {
-                panic!("backing storage is full, we didn't resize correctly")
-            }
         }
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 let old_bucket = std::mem::replace(&mut self.storage[index], MaybeUninit::uninit());
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
