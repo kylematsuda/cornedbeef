@@ -110,7 +110,7 @@ where
                 // Keep probing.
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
-            
+
             current = fast_rem(current + step, self.n_buckets());
             step += 1;
 

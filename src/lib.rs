@@ -48,7 +48,7 @@ fn fast_rem(n: usize, modulus_power_of_two: usize) -> usize {
     n & (modulus_power_of_two - 1)
 }
 
-pub use third::Map as CbHashMap;
+pub use fourth::Map as CbHashMap;
 
 #[cfg(test)]
 #[macro_export]
@@ -90,6 +90,7 @@ macro_rules! generate_tests {
             let items = (0..1000)
                 .map(|i| (i.to_string(), i.to_string()))
                 .collect::<Vec<_>>();
+
             let mut map = $map::new();
 
             for (k, v) in &items {

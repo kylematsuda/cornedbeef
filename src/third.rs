@@ -79,7 +79,7 @@ where
 
             if metadata::is_empty(meta) {
                 return ProbeResult::Empty(current, h2);
-            } else if metadata::is_value(meta) && metadata::h2(meta) == h2 {
+            } else if metadata::is_full(meta) && metadata::h2(meta) == h2 {
                 let (kk, _) = self.storage[current].as_ref().unwrap();
                 if kk == k {
                     return ProbeResult::Full(current);

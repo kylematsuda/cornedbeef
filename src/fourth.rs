@@ -2,7 +2,6 @@
 //! This is similar to the one in `third`, except using MaybeUninit as an optimization.
 
 use core::hash::{BuildHasher, Hash};
-use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
@@ -23,7 +22,6 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     /// `self.storage[i]` is initialized whenever `self.metadata[i].is_value()`.
     storage: Box<[MaybeUninit<(K, V)>]>,
     metadata: Box<[Metadata]>,
-    _ph: PhantomData<(K, V)>,
 }
 
 impl<K, V> Map<K, V> {
@@ -47,7 +45,6 @@ impl<K, V> Map<K, V> {
             n_occupied: 0,
             storage,
             metadata,
-            _ph: PhantomData,
         }
     }
 }
@@ -71,11 +68,10 @@ where
             n_occupied: self.n_occupied,
             storage: Box::new_uninit_slice(self.n_buckets()),
             metadata: self.metadata.clone(),
-            _ph: PhantomData,
         };
 
         for (i, m) in self.metadata.iter().enumerate() {
-            if metadata::is_value(*m) {
+            if metadata::is_full(*m) {
                 let (k, v) = unsafe { self.storage[i].assume_init_ref() };
                 other.storage[i].write((k.clone(), v.clone()));
             }
@@ -90,15 +86,9 @@ where
     S: BuildHasher,
 {
     fn drop(&mut self) {
-        if std::mem::needs_drop::<(K, V)>() {
-            if self.storage.len() > 0 {
-                for (i, &m) in self.metadata.iter().enumerate() {
-                    if metadata::is_value(m) {
-                        let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
-                        // Drop `_k` and `_v`.
-                        let (_k, _v) = unsafe { val.assume_init() };
-                    }
-                }
+        for (i, &m) in self.metadata.iter().enumerate() {
+            if metadata::is_full(m) {
+                unsafe { self.storage[i].assume_init_drop() };
             }
         }
     }
@@ -134,7 +124,7 @@ where
 
             if metadata::is_empty(*meta) {
                 return ProbeResult::Empty(current, h2);
-            } else if metadata::is_value(*meta) && metadata::h2(*meta) == h2 {
+            } else if metadata::is_full(*meta) && metadata::h2(*meta) == h2 {
                 // SAFETY: we checked the invariant that `meta.is_value()`.
                 let (kk, _) = unsafe { self.storage.get_unchecked(current).assume_init_ref() };
                 if kk == k {
@@ -238,6 +228,7 @@ where
         // Set `self.storage` to a new array.
         let new_storage = Box::new_uninit_slice(capacity);
         let old_storage = std::mem::replace(&mut self.storage, new_storage);
+        let old_buckets = Vec::from(old_storage).into_iter();
 
         let new_metadata = (0..capacity)
             .map(|_| metadata::empty())
@@ -251,8 +242,8 @@ where
         self.n_occupied = 0;
 
         // Move nodes from `old_storage` to `self.storage`.
-        for (&metadata, bucket) in old_metadata.iter().zip(Vec::from(old_storage).into_iter()) {
-            if metadata::is_value(metadata) {
+        for (&metadata, bucket) in old_metadata.iter().zip(old_buckets) {
+            if metadata::is_full(metadata) {
                 // SAFETY: we just checked the invariant above.
                 let (k, v) = unsafe { bucket.assume_init() };
                 self._insert(k, v);

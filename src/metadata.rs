@@ -27,7 +27,7 @@ pub const fn is_empty(m: Metadata) -> bool {
 }
 
 #[inline]
-pub const fn is_value(m: Metadata) -> bool {
+pub const fn is_full(m: Metadata) -> bool {
     (m & 0x80) == 0
 }
 
