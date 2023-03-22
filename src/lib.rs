@@ -1,6 +1,7 @@
 #![feature(
     new_uninit,
     allocator_api,
+    dropck_eyepatch,
     slice_ptr_get,
     nonnull_slice_from_raw_parts,
     portable_simd
@@ -87,16 +88,33 @@ macro_rules! generate_tests {
 
         #[test]
         fn insert_borrowed_data() {
+            let mut map = $map::new();
+
             let items = (0..1000)
                 .map(|i| (i.to_string(), i.to_string()))
                 .collect::<Vec<_>>();
-
-            let mut map = $map::new();
 
             for (k, v) in &items {
                 map.insert(k, v);
             }
             assert_eq!(map.len(), 1000);
+        }
+
+        #[test]
+        fn insert_owned_and_borrowed_data() {
+            let mut map_1: $map<String, &str> = $map::new();
+            let mut map_2: $map<&str, String> = $map::new();
+
+            let items = (0..1000)
+                .map(|i| (i.to_string(), i.to_string()))
+                .collect::<Vec<_>>();
+
+            for (k, v) in &items {
+                map_1.insert(k.clone(), v);
+                map_2.insert(k, v.clone());
+            }
+            assert_eq!(map_1.len(), 1000);
+            assert_eq!(map_2.len(), 1000);
         }
 
         #[test]

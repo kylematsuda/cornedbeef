@@ -2,6 +2,7 @@
 //! This is similar to the one in `third`, except using MaybeUninit as an optimization.
 
 use core::hash::{BuildHasher, Hash};
+use core::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
@@ -22,6 +23,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     /// `self.storage[i]` is initialized whenever `self.metadata[i].is_value()`.
     storage: Box<[MaybeUninit<(K, V)>]>,
     metadata: Box<[Metadata]>,
+    _ph: PhantomData<(K, V)>,
 }
 
 impl<K, V> Map<K, V> {
@@ -45,6 +47,7 @@ impl<K, V> Map<K, V> {
             n_occupied: 0,
             storage,
             metadata,
+            _ph: PhantomData,
         }
     }
 }
@@ -68,6 +71,7 @@ where
             n_occupied: self.n_occupied,
             storage: Box::new_uninit_slice(self.n_buckets()),
             metadata: self.metadata.clone(),
+            _ph: PhantomData,
         };
 
         for (i, m) in self.metadata.iter().enumerate() {
@@ -81,14 +85,16 @@ where
     }
 }
 
-impl<K, V, S> Drop for Map<K, V, S>
+unsafe impl<#[may_dangle] K, #[may_dangle] V, S> Drop for Map<K, V, S>
 where
     S: BuildHasher,
 {
     fn drop(&mut self) {
-        for (i, &m) in self.metadata.iter().enumerate() {
-            if metadata::is_full(m) {
-                unsafe { self.storage[i].assume_init_drop() };
+        if std::mem::needs_drop::<(K, V)>() {
+            for (i, &m) in self.metadata.iter().enumerate() {
+                if metadata::is_full(m) {
+                    unsafe { self.storage[i].assume_init_drop() };
+                }
             }
         }
     }
