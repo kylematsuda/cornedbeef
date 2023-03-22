@@ -60,7 +60,7 @@ impl<K, V> Default for Map<K, V> {
 
 impl<K, V> Clone for Map<K, V>
 where
-    K: Clone + PartialEq + Eq + Hash,
+    K: Clone,
     V: Clone,
 {
     /// No idea if this is right, but need to be able to clone to do benchmarks.

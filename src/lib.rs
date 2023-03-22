@@ -61,6 +61,24 @@ macro_rules! generate_tests {
         }
 
         #[test]
+        fn clone() {
+            let mut map = $map::new();
+
+            for i in 0..1000 {
+                map.insert(i, i);
+            }
+
+            assert_eq!(map.len(), 1000);
+
+            let another_map = map.clone();
+            assert_eq!(another_map.len(), 1000);
+
+            for i in 0..1000 {
+                assert_eq!(map.get(&i), another_map.get(&i));
+            }
+        }
+
+        #[test]
         fn insert() {
             let mut map = $map::new();
 
