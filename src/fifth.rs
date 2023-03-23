@@ -65,17 +65,15 @@ impl<K, V> Default for Map<K, V> {
     }
 }
 
-impl<K, V, S: BuildHasher> Drop for Map<K, V, S> {
+unsafe impl<#[may_dangle] K, #[may_dangle] V, S> Drop for Map<K, V, S>
+where
+    S: BuildHasher,
+{
     fn drop(&mut self) {
-        // Without this check, dropping an empty map with large capacity is REALLY SLOW
         if std::mem::needs_drop::<(K, V)>() {
-            if self.n_buckets() > 0 {
-                for (i, &meta) in self.metadata.iter().enumerate().take(self.n_buckets()) {
-                    if metadata::is_full(meta) {
-                        let val = std::mem::replace(&mut self.storage[i], MaybeUninit::uninit());
-                        // Drop `_k` and `_v`.
-                        let (_k, _v) = unsafe { val.assume_init() };
-                    }
+            for (i, &m) in self.metadata.iter().take(self.n_buckets()).enumerate() {
+                if metadata::is_full(m) {
+                    unsafe { self.storage[i].assume_init_drop() };
                 }
             }
         }
@@ -131,45 +129,32 @@ where
 {
     fn probe_find(&self, k: &K) -> ProbeResult {
         let (mut current, h2) = self.bucket_index_and_h2(k);
-        let initial_index = current;
-        let mut step = 1;
 
-        loop {
-            let probe = sse::Group::new(&self.metadata, current);
+        for step in 0..self.n_buckets() {
+            current = fast_rem(current + step * GROUP_SIZE, self.n_buckets());
+            let group = sse::SimdType::from_slice(&self.metadata[current..]);
 
             // First, check full buckets.
-            let candidates = probe.get_candidates(h2);
-            for i in 0..GROUP_SIZE {
-                if unsafe { candidates.test_unchecked(i) } {
-                    let index = (current + i) & (self.n_buckets() - 1);
-                    // SAFETY: we checked the invariant that `meta.is_value()`.
-                    let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
-                    if kk == k {
-                        return ProbeResult::Full(index);
-                    }
+            let mut candidates = sse::get_candidates(group, h2);
+            while let Some(i) = sse::find_first(candidates) {
+                let index = fast_rem(current + i, self.n_buckets());
+                // SAFETY: we checked the invariant that `meta.is_value()`.
+                let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
+                if kk == k {
+                    return ProbeResult::Full(index);
                 }
+                candidates.set(i, false);
             }
 
             // If we've made it to here, our key isn't in this group.
             // Look for the first empty bucket.
-            let empty = sse::find_first(&probe.get_empty());
+            let empty = sse::find_first(sse::get_empty(group));
             if let Some(i) = empty {
-                let index = (current + i) & (self.n_buckets() - 1);
+                let index = fast_rem(current + i, self.n_buckets());
                 return ProbeResult::Empty(index, h2);
             }
-
-            // If we've made it to here, all buckets in the group are full or tombstones,
-            // and we haven't found our key.
-            //
-            // Probe to the next group.
-            current = fast_rem(current + step * GROUP_SIZE, self.n_buckets());
-            step += 1;
-
-            // We've seen every element in `storage`!
-            if current == initial_index {
-                return ProbeResult::End;
-            }
         }
+        ProbeResult::End
     }
 
     #[inline]
@@ -257,12 +242,12 @@ where
             return metadata::empty();
         }
 
-        let probe_current = sse::Group::new(&self.metadata, index).get_empty();
-        let next_empty = sse::find_first(&probe_current);
+        let probe_current = sse::SimdType::from_slice(&self.metadata[index..]);
+        let next_empty = sse::find_first(sse::get_empty(probe_current));
 
         let previous = fast_rem(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
-        let probe_previous = sse::Group::new(&self.metadata, previous).get_empty();
-        let last_empty = sse::find_last(&probe_previous);
+        let probe_previous = sse::SimdType::from_slice(&self.metadata[previous..]);
+        let last_empty = sse::find_last(sse::get_empty(probe_previous));
 
         match (last_empty, next_empty) {
             (Some(i), Some(j)) if j + GROUP_SIZE - fast_rem(i, self.n_buckets()) < GROUP_SIZE => {
@@ -321,6 +306,6 @@ where
 #[cfg(test)]
 mod tests {
     use crate::fifth::Map;
-    // crate::generate_tests!(Map, true);
+    crate::generate_tests!(Map, true);
     crate::generate_non_alloc_tests!(Map);
 }

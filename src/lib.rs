@@ -49,7 +49,11 @@ fn fast_rem(n: usize, modulus_power_of_two: usize) -> usize {
     n & (modulus_power_of_two - 1)
 }
 
-pub use fourth::Map as CbHashMap;
+pub use fifth::Map as CbHashMap;
+
+pub fn get<'a>(map: &'a CbHashMap<usize, usize>, k: &'a usize) -> Option<&'a usize> {
+    map.get(k)
+}
 
 #[cfg(test)]
 #[macro_export]
