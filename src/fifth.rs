@@ -127,28 +127,28 @@ impl<K, V> Map<K, V>
 where
     K: PartialEq + Eq + Hash,
 {
+    #[inline(never)]
     fn probe_find(&self, k: &K) -> ProbeResult {
         let (mut current, h2) = self.bucket_index_and_h2(k);
 
         for step in 0..self.n_buckets() {
             current = fast_rem(current + step * GROUP_SIZE, self.n_buckets());
-            let group = sse::SimdType::from_slice(&self.metadata[current..]);
+            let group = sse::Group::from_slice(&self.metadata[current..]);
 
             // First, check full buckets.
-            let mut candidates = sse::get_candidates(group, h2);
-            while let Some(i) = sse::find_first(candidates) {
+            let candidates = sse::MaskIter::forward(group.to_candidates(h2));
+            for i in candidates {
                 let index = fast_rem(current + i, self.n_buckets());
                 // SAFETY: we checked the invariant that `meta.is_value()`.
                 let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
                 if kk == k {
                     return ProbeResult::Full(index);
                 }
-                candidates.set(i, false);
             }
 
             // If we've made it to here, our key isn't in this group.
             // Look for the first empty bucket.
-            let empty = sse::find_first(sse::get_empty(group));
+            let empty = sse::find_first(group.to_empties());
             if let Some(i) = empty {
                 let index = fast_rem(current + i, self.n_buckets());
                 return ProbeResult::Empty(index, h2);
@@ -237,17 +237,17 @@ where
 
     /// We can set back to empty unless we're in the middle of a bunch of tombstone or full.
     fn decide_tombstone_or_empty(&self, index: usize) -> Metadata {
-        // Pathological case where n_buckets is GROUP_SIZE
+        // Degenerate case where n_buckets is GROUP_SIZE
         if self.n_buckets() == GROUP_SIZE {
             return metadata::empty();
         }
 
-        let probe_current = sse::SimdType::from_slice(&self.metadata[index..]);
-        let next_empty = sse::find_first(sse::get_empty(probe_current));
+        let probe_current = sse::Group::from_slice(&self.metadata[index..]);
+        let next_empty = sse::find_first(probe_current.to_empties());
 
         let previous = fast_rem(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
-        let probe_previous = sse::SimdType::from_slice(&self.metadata[previous..]);
-        let last_empty = sse::find_last(sse::get_empty(probe_previous));
+        let probe_previous = sse::Group::from_slice(&self.metadata[previous..]);
+        let last_empty = sse::find_last(probe_previous.to_empties());
 
         match (last_empty, next_empty) {
             (Some(i), Some(j)) if j + GROUP_SIZE - fast_rem(i, self.n_buckets()) < GROUP_SIZE => {
