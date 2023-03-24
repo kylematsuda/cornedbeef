@@ -46,7 +46,7 @@ fn fix_capacity(capacity: usize) -> usize {
 
 #[inline(always)]
 fn fast_rem(n: usize, modulus_power_of_two: usize) -> usize {
-    n & (modulus_power_of_two - 1)
+    n & modulus_power_of_two.saturating_sub(1)
 }
 
 pub use fifth::Map as CbHashMap;
