@@ -55,6 +55,10 @@ pub fn get<'a>(map: &'a CbHashMap<usize, usize>, k: &'a usize) -> Option<&'a usi
     map.get(k)
 }
 
+pub fn insert<'a>(map: &'a mut CbHashMap<usize, usize>, k: usize, v: usize) -> Option<usize> {
+    map.insert(k, v)
+}
+
 #[cfg(test)]
 #[macro_export]
 macro_rules! generate_tests {

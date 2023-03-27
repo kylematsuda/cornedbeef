@@ -65,7 +65,7 @@ impl Iterator for MaskIter<Forward> {
         match self.inner.trailing_zeros() as usize {
             GROUP_SIZE => None,
             i => {
-                self.inner = self.inner ^ (1 << i);
+                self.inner ^= 1 << i;
                 Some(i)
             }
         }
@@ -81,7 +81,7 @@ impl Iterator for MaskIter<Reverse> {
             GROUP_SIZE => None,
             i => {
                 let i = 15 - i;
-                self.inner = self.inner ^ (1 << i);
+                self.inner ^= 1 << i;
                 Some(i)
             }
         }

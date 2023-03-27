@@ -127,7 +127,6 @@ impl<K, V> Map<K, V>
 where
     K: PartialEq + Eq + Hash,
 {
-    #[inline(never)]
     fn probe_find(&self, k: &K) -> ProbeResult {
         let (mut current, h2) = self.bucket_index_and_h2(k);
 
@@ -157,11 +156,12 @@ where
         ProbeResult::End
     }
 
-    #[inline]
     fn set_metadata(&mut self, index: usize, value: Metadata) {
-        self.metadata[index] = value;
-        if index < GROUP_SIZE {
-            self.metadata[index + self.n_buckets()] = value;
+        let index = fast_rem(index, self.n_buckets());
+        let index2 = fast_rem(index.wrapping_sub(GROUP_SIZE), self.n_buckets()) + GROUP_SIZE;
+        unsafe {
+            *self.metadata.get_unchecked_mut(index) = value;
+            *self.metadata.get_unchecked_mut(index2) = value;
         }
     }
 
