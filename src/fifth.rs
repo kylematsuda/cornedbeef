@@ -14,7 +14,6 @@ use crate::{fast_rem, fix_capacity, make_hash, DefaultHashBuilder};
 pub enum ProbeResult {
     Empty(usize, u8),
     Full(usize),
-    End,
 }
 
 pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
@@ -153,7 +152,7 @@ where
                 return ProbeResult::Empty(index, h2);
             }
         }
-        ProbeResult::End
+        unreachable!("backing storage is full, we didn't resize correctly")
     }
 
     fn set_metadata(&mut self, index: usize, value: Metadata) {
@@ -167,7 +166,7 @@ where
 
     pub fn get(&self, k: &K) -> Option<&V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, v) = unsafe { self.storage[index].assume_init_ref() };
@@ -178,7 +177,7 @@ where
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
                 let (_, v) = unsafe { self.storage[index].assume_init_mut() };
@@ -208,15 +207,12 @@ where
                 let (_, vv) = unsafe { self.storage[index].assume_init_mut() };
                 Some(std::mem::replace(vv, v))
             }
-            ProbeResult::End => {
-                panic!("backing storage is full, we didn't resize correctly")
-            }
         }
     }
 
     pub fn remove(&mut self, k: &K) -> Option<V> {
         match self.probe_find(k) {
-            ProbeResult::Empty(..) | ProbeResult::End => None,
+            ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 let old_bucket = std::mem::replace(&mut self.storage[index], MaybeUninit::uninit());
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
