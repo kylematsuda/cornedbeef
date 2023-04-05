@@ -2,7 +2,7 @@ use cornedbeef::CbHashMap;
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use std::collections::HashMap as StdHashMap;
 
-static SIZE: usize = 100_000;
+const SIZE: usize = 100_000;
 
 // A random key iterator.
 // Copied from rust-lang/hashbrown
@@ -47,15 +47,15 @@ pub fn new(c: &mut Criterion) {
 
 macro_rules! bench_drop {
     ($group:expr, $map:ident, $label:expr, $size:expr) => {
-        let mut map = $map::new();
-
-        for i in 0..$size {
-            map.insert(i, i.to_string());
-        }
-
         $group.bench_function(BenchmarkId::new($label, $size), |b| {
             b.iter_batched(
-                || map.clone(),
+                || {
+                    let mut map = $map::new();
+                    for i in 0..$size {
+                        black_box(map.insert(i, i.to_string()));
+                    }
+                    map
+                },
                 |map| {
                     black_box(map);
                 },
@@ -76,9 +76,9 @@ macro_rules! bench_grow {
     ($group:expr, $map:ident, $label:expr, $it:expr, $len:expr) => {
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
             b.iter_batched_ref(
-                || $map::new(),
+                || black_box($map::new()),
                 |map| {
-                    for i in $it {
+                    for i in black_box($it) {
                         black_box(map.insert(i, [i; $len]));
                     }
                     black_box(map);
@@ -128,7 +128,7 @@ macro_rules! bench_reserved {
     ($group:expr, $map:ident, $label:expr, $it:expr, $size:expr, $len:expr) => {
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
             b.iter_batched_ref(
-                || $map::with_capacity($size),
+                || black_box($map::with_capacity($size)),
                 |map| {
                     for i in $it {
                         black_box(map.insert(i, [i; $len]));
@@ -161,20 +161,25 @@ pub fn insert_reserved(c: &mut Criterion) {
 
 macro_rules! bench_lookup {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
-        let mut map = $map::new();
-        let seq = RandomKeys::new();
-
-        for i in seq.take($size) {
-            map.insert(i, [i; $len]);
-        }
+        let seq = RandomKeys::new().take($size).collect::<Vec<_>>();
 
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
-            b.iter(|| {
-                for i in seq.take($size) {
-                    black_box(map.get(&i));
-                }
-                black_box(&mut map);
-            })
+            b.iter_batched_ref(
+                || {
+                    let mut map = $map::new();
+                    for i in &seq {
+                        map.insert(*i, [*i; $len]);
+                    }
+                    map
+                },
+                |map| {
+                    for i in black_box(&seq) {
+                        black_box(map.get(i));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
         });
     };
 }
@@ -199,21 +204,26 @@ pub fn lookup(c: &mut Criterion) {
 
 macro_rules! bench_lookup_string {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
-        let mut map = $map::new();
         let seq = RandomKeys::new();
         let keys = seq.take($size).map(|i| i.to_string()).collect::<Vec<_>>();
 
-        for i in &keys {
-            map.insert(i.clone(), [i.len(); $len]);
-        }
-
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
-            b.iter(|| {
-                for i in &keys {
-                    black_box(map.get(i));
-                }
-                black_box(&mut map);
-            })
+            b.iter_batched_ref(
+                || {
+                    let mut map = $map::new();
+                    for i in &keys {
+                        map.insert(i.clone(), [i.len(); $len]);
+                    }
+                    map
+                },
+                |map| {
+                    for i in black_box(&keys) {
+                        black_box(map.get(i));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
         });
     };
 }
@@ -238,22 +248,27 @@ pub fn lookup_string(c: &mut Criterion) {
 
 macro_rules! bench_lookup_miss {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
-        let mut map = $map::new();
         let mut seq = RandomKeys::new();
-
-        for i in (&mut seq).take($size) {
-            map.insert(i, [i; $len]);
-        }
-
+        let hits: Vec<_> = (&mut seq).take($size).collect();
         let misses: Vec<_> = (&mut seq).take($size).collect();
 
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
-            b.iter(|| {
-                for i in &misses {
-                    black_box(map.get(i));
-                }
-                black_box(&mut map);
-            })
+            b.iter_batched_ref(
+                || {
+                    let mut map = $map::new();
+                    for i in &hits {
+                        map.insert(*i, [*i; $len]);
+                    }
+                    map
+                },
+                |map| {
+                    for i in black_box(&misses) {
+                        black_box(map.get(i));
+                    }
+                    black_box(map);
+                },
+                BatchSize::PerIteration,
+            )
         });
     };
 }
@@ -279,17 +294,18 @@ pub fn lookup_miss(c: &mut Criterion) {
 macro_rules! bench_remove {
     ($group:expr, $map:ident, $label:expr, $size:expr, $len:expr) => {
         let seq: Vec<_> = RandomKeys::new().take($size).collect();
-        let mut map = $map::new();
-
-        for i in &seq {
-            map.insert(i, [i; $len]);
-        }
 
         $group.bench_function(BenchmarkId::new($label, $len), |b| {
             b.iter_batched_ref(
-                || map.clone(),
-                |map| {
+                || {
+                    let mut map = $map::new();
                     for i in &seq {
+                        map.insert(i, [i; $len]);
+                    }
+                    map
+                },
+                |map| {
+                    for i in black_box(&seq) {
                         black_box(map.remove(&i));
                     }
                     assert!(map.len() == 0);
