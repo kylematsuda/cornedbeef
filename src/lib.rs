@@ -3,7 +3,6 @@
     allocator_api,
     dropck_eyepatch,
     slice_ptr_get,
-    nonnull_slice_from_raw_parts,
     portable_simd
 )]
 
