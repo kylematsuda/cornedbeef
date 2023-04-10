@@ -158,10 +158,8 @@ where
     fn set_metadata(&mut self, index: usize, value: Metadata) {
         let index = fast_rem(index, self.n_buckets());
         let index2 = fast_rem(index.wrapping_sub(GROUP_SIZE), self.n_buckets()) + GROUP_SIZE;
-        unsafe {
-            *self.metadata.get_unchecked_mut(index) = value;
-            *self.metadata.get_unchecked_mut(index2) = value;
-        }
+        self.metadata[index] = value;
+        self.metadata[index2] = value;
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
@@ -231,7 +229,8 @@ where
         }
     }
 
-    /// We can set back to empty unless we're in the middle of a bunch of tombstone or full.
+    /// We can set back to empty unless we're inside a run of `GROUP_SIZE`
+    /// non-empty buckets.
     fn decide_tombstone_or_empty(&self, index: usize) -> Metadata {
         // Degenerate case where n_buckets is GROUP_SIZE
         if self.n_buckets() == GROUP_SIZE {
@@ -239,17 +238,19 @@ where
         }
 
         let probe_current = sse::Group::from_slice(&self.metadata[index..]);
-        let next_empty = sse::find_first(probe_current.to_empties());
+        let next_empty = sse::find_first(probe_current.to_empties()).unwrap_or(GROUP_SIZE);
 
-        let previous = fast_rem(index + self.n_buckets() - GROUP_SIZE, self.n_buckets());
+        let previous = fast_rem(index.wrapping_sub(GROUP_SIZE), self.n_buckets());
         let probe_previous = sse::Group::from_slice(&self.metadata[previous..]);
-        let last_empty = sse::find_last(probe_previous.to_empties());
+        let last_empty = sse::find_last(probe_previous.to_empties()).unwrap_or(0);
 
-        match (last_empty, next_empty) {
-            (Some(i), Some(j)) if j + GROUP_SIZE - fast_rem(i, self.n_buckets()) < GROUP_SIZE => {
-                metadata::empty()
-            }
-            _ => metadata::tombstone(),
+        // Find the distance between nearest two empty buckets.
+        // If it's less than GROUP_SIZE, then all groups containing `index` have
+        // at least one empty bucket.
+        if (next_empty + GROUP_SIZE).saturating_sub(last_empty) < GROUP_SIZE {
+            metadata::empty()
+        } else {
+            metadata::tombstone()
         }
     }
 
@@ -260,6 +261,7 @@ where
         (index, h2)
     }
 
+    #[inline]
     fn needs_resize(&self) -> bool {
         // Using a load factor of 7/8.
         // NOTE: we need to use n_occupied instead of n_items here!
@@ -289,7 +291,7 @@ where
         self.n_occupied = 0;
 
         // Move nodes from `old_storage` to `self.storage`.
-        for (&metadata, bucket) in old_metadata.iter().zip(Vec::from(old_storage).into_iter()) {
+        for (&metadata, bucket) in old_metadata.iter().zip(Vec::from(old_storage)) {
             if metadata::is_full(metadata) {
                 // SAFETY: we just checked the invariant above.
                 let (k, v) = unsafe { bucket.assume_init() };
