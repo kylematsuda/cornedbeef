@@ -85,24 +85,23 @@ where
     K: Clone + PartialEq + Eq + Hash,
     V: Clone,
 {
-    /// No idea if this is right, but need to be able to clone to do benchmarks.
     fn clone(&self) -> Self {
-        let mut other = Self {
-            hasher: DefaultHashBuilder::default(),
-            n_items: self.n_items,
-            n_occupied: self.n_occupied,
-            storage: Box::new_uninit_slice(self.n_buckets()),
-            metadata: self.metadata.clone(),
-            _ph: PhantomData,
-        };
+        let mut other = Self::with_capacity(self.n_buckets());
+        assert_eq!(self.n_buckets(), other.n_buckets());
 
-        for (i, m) in self.metadata.iter().enumerate().take(self.storage.len()) {
+        for (i, m) in self.metadata.iter().enumerate().take(self.n_buckets()) {
             if metadata::is_full(*m) {
                 let (k, v) = unsafe { self.storage[i].assume_init_ref() };
                 other.storage[i].write((k.clone(), v.clone()));
+
+                // Important: Only update the metadata after we successfully clone!
+                // If cloning panics, then updating the metadata before cloning 
+                // leads to a read of uninitialized memory when `other` is dropped.
+                other.metadata[i] = *m;
+                other.n_items += 1;
+                other.n_occupied += 1;
             }
         }
-
         other
     }
 }
