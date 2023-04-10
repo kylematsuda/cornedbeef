@@ -22,7 +22,7 @@ pub struct Map<K, V, S: BuildHasher = DefaultHashBuilder> {
     n_items: usize,    // Number of live items
     n_occupied: usize, // Number of occupied buckets
     /// Safety: we maintain the following invariant:
-    /// `self.storage[i]` is initialized whenever `self.metadata[i].is_value()`.
+    /// `self.storage[i]` is initialized whenever `metadata::is_full(self.metadata[i])`.
     storage: Box<[MaybeUninit<(K, V)>]>,
     /// Contains an extra `GROUP_SIZE` elements to avoid wrapping SIMD access
     metadata: Box<[Metadata]>,
