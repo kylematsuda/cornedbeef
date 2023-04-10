@@ -4,7 +4,7 @@
     dropck_eyepatch,
     slice_ptr_get,
     portable_simd,
-    core_intrinsics,
+    core_intrinsics
 )]
 
 use core::hash::{BuildHasher, Hasher};

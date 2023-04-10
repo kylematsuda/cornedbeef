@@ -4,9 +4,9 @@
 //! Warning: This does not work well yet.
 
 use core::hash::{BuildHasher, Hash};
+use std::intrinsics::{likely, unlikely};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::intrinsics::{likely, unlikely};
 
 use crate::metadata::{self, Metadata};
 use crate::sse::{self, GROUP_SIZE};
@@ -132,13 +132,15 @@ where
 
         for step in 0..self.n_buckets() {
             current = fast_rem(current + step * GROUP_SIZE, self.n_buckets());
-            let group = sse::Group::from_slice(&self.metadata[current..]);
+            // SAFETY: rem above ensures `current` is inbounds
+            let group = sse::Group::from_slice(unsafe { self.metadata.get_unchecked(current..) });
 
             // First, check full buckets.
             let candidates = sse::MaskIter::forward(group.to_candidates(h2));
             for i in candidates {
                 let index = fast_rem(current + i, self.n_buckets());
                 // SAFETY: we checked the invariant that `meta.is_value()`.
+                // rem above ensures `current` is inbounds
                 let (kk, _) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
                 if kk == k {
                     return ProbeResult::Full(index);
@@ -159,8 +161,11 @@ where
     fn set_metadata(&mut self, index: usize, value: Metadata) {
         let index = fast_rem(index, self.n_buckets());
         let index2 = fast_rem(index.wrapping_sub(GROUP_SIZE), self.n_buckets()) + GROUP_SIZE;
-        self.metadata[index] = value;
-        self.metadata[index2] = value;
+        // SAFETY: rems above ensure that these indices are inbounds
+        unsafe {
+            *self.metadata.get_unchecked_mut(index) = value;
+            *self.metadata.get_unchecked_mut(index2) = value;
+        }
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
@@ -168,7 +173,8 @@ where
             ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
-                let (_, v) = unsafe { self.storage[index].assume_init_ref() };
+                // Index returned by probe_find is guaranteed to be inbounds.
+                let (_, v) = unsafe { self.storage.get_unchecked(index).assume_init_ref() };
                 Some(v)
             }
         }
@@ -179,6 +185,7 @@ where
             ProbeResult::Empty(..) => None,
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
+                // Index returned by probe_find is guaranteed to be inbounds.
                 let (_, v) = unsafe { self.storage[index].assume_init_mut() };
                 Some(v)
             }
@@ -196,14 +203,16 @@ where
         match self.probe_find(&k) {
             ProbeResult::Empty(index, h2) => {
                 self.set_metadata(index, metadata::from_h2(h2));
-                self.storage[index].write((k, v));
+                // SAFETY: Index returned by probe_find is guaranteed to be inbounds.
+                unsafe { self.storage.get_unchecked_mut(index).write((k, v)) };
                 self.n_items += 1;
                 self.n_occupied += 1;
                 None
             }
             ProbeResult::Full(index) => {
                 // SAFETY: `ProbeResult::Full` implies that `self.storage[index]` is initialized.
-                let (_, vv) = unsafe { self.storage[index].assume_init_mut() };
+                // Index returned by probe_find is guaranteed to be inbounds.
+                let (_, vv) = unsafe { self.storage.get_unchecked_mut(index).assume_init_mut() };
                 Some(std::mem::replace(vv, v))
             }
         }
