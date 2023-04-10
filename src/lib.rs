@@ -202,6 +202,46 @@ macro_rules! generate_tests {
             let buckets = if $should_resize { buckets * 2 } else { buckets };
             assert_eq!(buckets, map.n_buckets());
         }
+
+        #[test]
+        fn clone_then_insert() {
+            let mut map = $map::new();
+
+            for i in 0..1000 {
+                map.insert(i, i);
+            }
+
+            assert_eq!(map.len(), 1000);
+
+            let mut new_map = map.clone();
+
+            for i in 1000..2000 {
+                new_map.insert(i, i);
+            }
+            assert_eq!(new_map.len(), 2000);
+        }
+
+        #[test]
+        #[should_panic]
+        fn clone_bomb() {
+            #[derive(PartialEq, Eq, Hash)]
+            struct Bomb(usize);
+
+            impl Clone for Bomb {
+                fn clone(&self) -> Self {
+                    panic!("bomb!!!")
+                }
+            }
+
+            let mut map: $map<Bomb, String> = $map::new();
+
+            for i in 0..1000 {
+                map.insert(Bomb(i), i.to_string());
+            }
+
+            // This line panics, but shouldn't cause UB!
+            let _ = map.clone();
+        }
     };
 }
 
