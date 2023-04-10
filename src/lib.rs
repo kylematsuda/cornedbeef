@@ -3,7 +3,8 @@
     allocator_api,
     dropck_eyepatch,
     slice_ptr_get,
-    portable_simd
+    portable_simd,
+    core_intrinsics,
 )]
 
 use core::hash::{BuildHasher, Hasher};

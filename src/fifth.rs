@@ -6,6 +6,7 @@
 use core::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
+use std::intrinsics::{likely, unlikely};
 
 use crate::metadata::{self, Metadata};
 use crate::sse::{self, GROUP_SIZE};
@@ -185,7 +186,7 @@ where
     }
 
     pub fn insert(&mut self, k: K, v: V) -> Option<V> {
-        if self.needs_resize() {
+        if unlikely(self.needs_resize()) {
             self.resize();
         }
         self._insert(k, v)
@@ -247,7 +248,7 @@ where
         // Find the distance between nearest two empty buckets.
         // If it's less than GROUP_SIZE, then all groups containing `index` have
         // at least one empty bucket.
-        if (next_empty + GROUP_SIZE).saturating_sub(last_empty) < GROUP_SIZE {
+        if likely((next_empty + GROUP_SIZE).saturating_sub(last_empty) < GROUP_SIZE) {
             metadata::empty()
         } else {
             metadata::tombstone()
@@ -268,6 +269,8 @@ where
         self.n_buckets() == 0 || ((self.n_occupied * 8) / self.n_buckets()) > 7
     }
 
+    #[cold]
+    #[inline(never)]
     fn resize(&mut self) {
         // Calculate the new capacity.
         let capacity = match self.n_buckets() {
