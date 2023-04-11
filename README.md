@@ -7,7 +7,7 @@ Please see the accompanying blog posts:
 - [Part 2: Swiss Table metadata and MaybeUninit](https://kylematsuda.com/blog/writing_a_hashmap_part_2)
 - [Part 3a: SIMD probing](https://kylematsuda.com/blog/writing_a_hashmap_part_3a)
 - [Part 3b: Exception safety](https://kylematsuda.com/blog/writing_a_hashmap_part_3b)
-- [Part 3b: Resizing with SIMD](https://kylematsuda.com/blog/writing_a_hashmap_part_3c)
+- [Part 3c: Resizing with SIMD](https://kylematsuda.com/blog/writing_a_hashmap_part_3c)
 
 The design was inspired by Google's [Swiss Tables map](https://abseil.io/about/design/swisstables) and Rust's `std::collections::HashMap` aka [hashbrown](https://crates.io/crates/hashbrown) (based on Swiss Tables).
 
