@@ -95,7 +95,7 @@ where
                 // Important: Only update the metadata after we successfully clone!
                 // If cloning panics, then updating the metadata before cloning 
                 // leads to a read of uninitialized memory when `other` is dropped.
-                other.metadata[i] = *m;
+                other.set_metadata(i, *m);
                 other.n_items += 1;
                 other.n_occupied += 1;
             }
