@@ -220,6 +220,9 @@ macro_rules! generate_tests {
                 new_map.insert(i, i);
             }
             assert_eq!(new_map.len(), 2000);
+            for i in 0..2000 {
+                assert_eq!(new_map.get(&i), Some(&i));
+            }
         }
 
         #[test]
