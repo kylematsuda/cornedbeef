@@ -1,7 +1,5 @@
 //! A Swiss Tables-inspired map with metadata.
 //! Uses SSE instructions on the metadata.
-//!
-//! Warning: This does not work well yet.
 
 use core::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
