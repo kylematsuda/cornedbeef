@@ -1,10 +1,11 @@
 #![feature(
     new_uninit,
     allocator_api,
+    iter_array_chunks,
     dropck_eyepatch,
     slice_ptr_get,
     portable_simd,
-    core_intrinsics,
+    core_intrinsics
 )]
 
 use core::hash::{BuildHasher, Hasher};

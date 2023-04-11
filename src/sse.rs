@@ -17,9 +17,21 @@ impl Group {
     }
 
     #[inline]
+    pub fn from_array(a: [u8; GROUP_SIZE]) -> Self {
+        Self(SimdType::from_array(a))
+    }
+
+    #[inline]
     pub fn to_empties(self) -> MaskType {
         let empty = SimdType::splat(metadata::empty());
         empty.simd_eq(self.0)
+    }
+
+    #[inline]
+    pub fn to_fulls(self) -> MaskType {
+        let empty_mask = SimdType::splat(metadata::empty());
+        let zeroes = SimdType::splat(0);
+        (empty_mask & self.0).simd_eq(zeroes)
     }
 
     #[inline]

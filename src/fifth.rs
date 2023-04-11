@@ -2,9 +2,9 @@
 //! Uses SSE instructions on the metadata.
 
 use core::hash::{BuildHasher, Hash};
+use std::intrinsics::{likely, unlikely};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::intrinsics::{likely, unlikely};
 
 use crate::metadata::{self, Metadata};
 use crate::sse::{self, GROUP_SIZE};
@@ -93,7 +93,7 @@ where
                 other.storage[i].write((k.clone(), v.clone()));
 
                 // Important: Only update the metadata after we successfully clone!
-                // If cloning panics, then updating the metadata before cloning 
+                // If cloning panics, then updating the metadata before cloning
                 // leads to a read of uninitialized memory when `other` is dropped.
                 other.set_metadata(i, *m);
                 other.n_items += 1;
@@ -290,12 +290,25 @@ where
         self.n_items = 0;
         self.n_occupied = 0;
 
-        // Move nodes from `old_storage` to `self.storage`.
-        for (&metadata, bucket) in old_metadata.iter().zip(Vec::from(old_storage)) {
-            if metadata::is_full(metadata) {
-                // SAFETY: we just checked the invariant above.
-                let (k, v) = unsafe { bucket.assume_init() };
-                self._insert(k, v);
+        // Chunk metadata and storage into `GROUP_SIZE` chunks
+        let metadata_chunks = Vec::from(old_metadata)
+            .into_iter()
+            .array_chunks::<GROUP_SIZE>();
+        let storage_chunks = Vec::from(old_storage)
+            .into_iter()
+            .array_chunks::<GROUP_SIZE>();
+
+        // Zipping `metadata_chunks` and `storage_chunks` ensures that we correctly ignore the
+        // replicated metadata group.
+        for (m_chunk, buckets) in metadata_chunks.zip(storage_chunks) {
+            // Get a mask showing the indices with full buckets.
+            let full_mask = sse::Group::from_array(m_chunk).to_fulls();
+            // Re-insert each full bucket.
+            for (is_full, bucket) in full_mask.to_array().into_iter().zip(buckets) {
+                if is_full {
+                    let (k, v) = unsafe { bucket.assume_init() };
+                    self._insert(k, v);
+                }
             }
         }
     }

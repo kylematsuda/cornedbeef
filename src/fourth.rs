@@ -72,7 +72,7 @@ where
                 other.storage[i].write((k.clone(), v.clone()));
 
                 // Important: Only update the metadata after we successfully clone!
-                // If cloning panics, then updating the metadata before cloning 
+                // If cloning panics, then updating the metadata before cloning
                 // leads to a read of uninitialized memory when `other` is dropped.
                 other.metadata[i] = *m;
                 other.n_items += 1;
