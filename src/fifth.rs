@@ -300,12 +300,14 @@ where
 
         // Zipping `metadata_chunks` and `storage_chunks` ensures that we correctly ignore the
         // replicated metadata group.
-        for (m_chunk, buckets) in metadata_chunks.zip(storage_chunks) {
+        for (m_chunk, s_chunk) in metadata_chunks.zip(storage_chunks) {
             // Get a mask showing the indices with full buckets.
             let full_mask = sse::Group::from_array(m_chunk).to_fulls();
             // Re-insert each full bucket.
-            for (is_full, bucket) in full_mask.to_array().into_iter().zip(buckets) {
+            for (is_full, bucket) in full_mask.to_array().into_iter().zip(s_chunk) {
                 if is_full {
+                    // Safety: if `is_full`, then we can assume the `bucket` 
+                    // is initialized according to our safety invariant.
                     let (k, v) = unsafe { bucket.assume_init() };
                     self._insert(k, v);
                 }

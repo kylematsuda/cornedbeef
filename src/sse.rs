@@ -30,8 +30,8 @@ impl Group {
     #[inline]
     pub fn to_fulls(self) -> MaskType {
         let empty_mask = SimdType::splat(metadata::empty());
-        let zeroes = SimdType::splat(0);
-        (empty_mask & self.0).simd_eq(zeroes)
+        let zeros = SimdType::splat(0);
+        (empty_mask & self.0).simd_eq(zeros)
     }
 
     #[inline]
