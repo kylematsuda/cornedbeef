@@ -225,10 +225,9 @@ where
                 self.set_metadata(index, metadata_value);
 
                 self.n_items -= 1;
-                if metadata::is_empty(metadata_value) {
-                    self.n_occupied -= 1;
-                }
-
+                // Branchless way of decrementing if `is_empty(metadata_value)`.
+                // `metadata::empty()` is 0x80, `metadata::tombstone()` is 0xFE.
+                self.n_occupied -= ((metadata_value >> 1) & 0b1) as usize;
                 Some(vv)
             }
         }
