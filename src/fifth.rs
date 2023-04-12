@@ -150,7 +150,14 @@ where
                 return ProbeResult::Empty(index, h2);
             }
         }
-        unreachable!("backing storage is full, we didn't resize correctly")
+
+        // This case is hit when calling `get` or `remove` on an empty map.
+        // Just return a `ProbeResult::Empty` (the contents of which do not matter).
+        if self.n_buckets() == 0 {
+            ProbeResult::Empty(0, 0)
+        } else {
+            unreachable!("backing storage is full, we didn't resize correctly")
+        }
     }
 
     fn set_metadata(&mut self, index: usize, value: Metadata) {
@@ -306,7 +313,7 @@ where
             // Re-insert each full bucket.
             for (is_full, bucket) in full_mask.to_array().into_iter().zip(s_chunk) {
                 if is_full {
-                    // Safety: if `is_full`, then we can assume the `bucket` 
+                    // Safety: if `is_full`, then we can assume the `bucket`
                     // is initialized according to our safety invariant.
                     let (k, v) = unsafe { bucket.assume_init() };
                     self._insert(k, v);

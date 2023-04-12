@@ -70,6 +70,18 @@ macro_rules! generate_tests {
         }
 
         #[test]
+        fn get_from_empty() {
+            let m = $map::<String, String>::new();
+            assert_eq!(m.get(&String::from("hi")), None);
+        }
+
+        #[test]
+        fn remove_from_empty() {
+            let mut m = $map::<String, String>::new();
+            assert_eq!(m.remove(&String::from("hi")), None);
+        }
+
+        #[test]
         fn clone() {
             let mut map = $map::new();
 

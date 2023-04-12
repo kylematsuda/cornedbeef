@@ -110,7 +110,12 @@ where
                 Bucket::Tombstone | Bucket::Full(..) => {}
             }
         }
-        unreachable!("backing storage is full, we didn't resize correctly")
+
+        if self.n_buckets() == 0 {
+            ProbeResult::Empty(0)
+        } else {
+            unreachable!("backing storage is full, we didn't resize correctly")
+        }
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {

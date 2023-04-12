@@ -60,7 +60,7 @@ where
 {
     pub fn get(&self, k: &K) -> Option<&V> {
         let index = self.bucket_index(k);
-        for (kk, vv) in self.storage[index].iter() {
+        for (kk, vv) in self.storage.get(index)?.iter() {
             if kk == k {
                 return Some(vv);
             }
@@ -70,7 +70,7 @@ where
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         let index = self.bucket_index(k);
-        for (kk, vv) in self.storage[index].iter_mut() {
+        for (kk, vv) in self.storage.get_mut(index)?.iter_mut() {
             if kk == k {
                 return Some(vv);
             }
@@ -103,7 +103,7 @@ where
         let index = self.bucket_index(k);
         let mut list_index = None;
 
-        for (i, (kk, _)) in self.storage[index].iter().enumerate() {
+        for (i, (kk, _)) in self.storage.get(index)?.iter().enumerate() {
             if kk == k {
                 list_index = Some(i);
                 break;
